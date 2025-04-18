@@ -30,4 +30,9 @@ coverage/
 
 # Misc
 .cache/
-.temp/ 
+.temp/
+
+# Rust specific
+/target/
+**/*.rs.bk
+Cargo.lock
