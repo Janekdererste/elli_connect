@@ -1,12 +1,12 @@
 [package]
 name = "elli-spotify"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-axum = { version = "0.7", features = ["ws"] }
-tokio = { version = "1.36", features = ["full"] }
-tower-http = { version = "0.5", features = ["fs", "trace"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-hyper = { version = "1.0", features = ["server"] }
+actix-web = "4.11.0"
+askama = "0.14.0"
+actix-files = "0.6.6"
+
+[build-dependencies]
+askama = "0.14.0"

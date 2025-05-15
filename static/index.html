@@ -4,9 +4,71 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Elli Spotify</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .login-button {
+            background-color: #1DB954;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 20px 0;
+        }
+        .login-button:hover {
+            background-color: #1ed760;
+        }
+        #now-playing {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome to Elli Spotify</h1>
-    <p>This is a static page served by our Rust web server.</p>
+    <h1>Elli Spotify</h1>
+    <button class="login-button" onclick="window.location.href='/login'">Login with Spotify</button>
+    <div id="now-playing">
+        <h2>Currently Playing</h2>
+        <p>Not playing anything</p>
+    </div>
+
+    <script>
+        // Function to update the currently playing track
+        async function updateNowPlaying() {
+            try {
+                const response = await fetch('/currently-playing');
+                const data = await response.json();
+                
+                const nowPlayingDiv = document.getElementById('now-playing');
+                if (data.is_playing && data.item) {
+                    nowPlayingDiv.innerHTML = `
+                        <h2>Currently Playing</h2>
+                        <p><strong>${data.item.name}</strong> by ${data.item.artists.map(artist => artist.name).join(', ')}</p>
+                    `;
+                } else {
+                    nowPlayingDiv.innerHTML = `
+                        <h2>Currently Playing</h2>
+                        <p>Not playing anything</p>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error fetching currently playing track:', error);
+            }
+        }
+
+        // Update every 5 seconds
+        setInterval(updateNowPlaying, 5000);
+        // Initial update
+        updateNowPlaying();
+    </script>
 </body>
 </html> 
