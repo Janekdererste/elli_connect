@@ -9,6 +9,7 @@ use actix_session::storage::CookieSessionStore;
 use actix_session::SessionMiddleware;
 use actix_web::cookie::Key;
 use actix_web::{get, web, App, HttpServer, Responder};
+use std::env;
 use templates::IndexTemplate;
 
 #[get("/")]
@@ -21,8 +22,9 @@ async fn index() -> impl Responder {
 async fn main() -> std::io::Result<()> {
     println!("Server starting at http://127.0.0.1:3000");
 
+    let secret = env::var("SPOTIFY_CLIENT_SECRET").expect("SPOTIFY_CLIENT_SECRET must be set");
     let session_key = Key::generate();
-    let state = web::Data::new(AppState::new());
+    let state = web::Data::new(AppState::new(secret));
 
     HttpServer::new(move || {
         App::new()

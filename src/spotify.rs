@@ -1,4 +1,4 @@
-use crate::state::AppState;
+use crate::state::{AppState, SpotifyAppCredentials};
 use crate::templates::{into_response, CallbackTemplate};
 use actix_session::Session;
 use actix_web::{get, web, HttpResponse, Responder, Scope};
@@ -8,26 +8,10 @@ use rand::distributions::{Alphanumeric, DistString};
 use serde::Deserialize;
 use url::Url;
 
-const SPOTIFY_CLIENT_ID: &str = "38f14e6cbed74638857280d0165bc93a";
-const SPOTIFY_CLIENT_SECRET: &str = "9854dfcb771b4a7381c276b72d0f3a04";
 const SPOTIFY_SCOPE: &str = "user-read-private";
 const SPOTIFY_AUTH_URL: &str = "https://accounts.spotify.com/authorize";
 const SPOTIFY_TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
 const REDIRECT_URI: &str = "http://127.0.0.1:3000/spotify/callback";
-
-struct SpotifyAppCredentials {
-    client_id: String,
-    client_secret: String,
-}
-
-impl SpotifyAppCredentials {
-    fn new(client_secret: &str) -> Self {
-        Self {
-            client_id: SPOTIFY_CLIENT_ID.to_string(),
-            client_secret: client_secret.to_string(),
-        }
-    }
-}
 
 pub fn scope() -> Scope {
     web::scope("/spotify")
@@ -36,7 +20,7 @@ pub fn scope() -> Scope {
 }
 
 #[get("/auth")]
-async fn authenticate(session: Session) -> impl Responder {
+async fn authenticate(session: Session, app_state: web::Data<AppState>) -> impl Responder {
     let state = rnd_state();
     // take care of error handling later
     session
@@ -46,7 +30,7 @@ async fn authenticate(session: Session) -> impl Responder {
     let mut url = Url::parse(SPOTIFY_AUTH_URL).unwrap();
     url.query_pairs_mut()
         .append_pair("response_type", "code")
-        .append_pair("client_id", SPOTIFY_CLIENT_ID)
+        .append_pair("client_id", app_state.get_spotify_credentials().id())
         .append_pair("scope", SPOTIFY_SCOPE)
         .append_pair("redirect_uri", REDIRECT_URI)
         .append_pair("state", &state);
@@ -92,7 +76,7 @@ async fn callback(
         }
     }
 
-    let token_response = obtain_token(&params.code)
+    let token_response = obtain_token(&params.code, state.get_spotify_credentials())
         .await
         .expect("Could not obtain access token");
 
@@ -125,9 +109,12 @@ fn get_client_id(session: &Session) -> String {
     }
 }
 
-async fn obtain_token(code: &str) -> Result<TokenResponse, reqwest::Error> {
+async fn obtain_token(
+    code: &str,
+    spotify_credentials: &SpotifyAppCredentials,
+) -> Result<TokenResponse, reqwest::Error> {
     let client = reqwest::Client::new();
-    let auth_header = auth_header();
+    let auth_header = auth_header(spotify_credentials);
 
     let form_data = [
         ("grant_type", "authorization_code"),
@@ -147,7 +134,11 @@ async fn obtain_token(code: &str) -> Result<TokenResponse, reqwest::Error> {
     Ok(token_response)
 }
 
-fn auth_header() -> String {
-    let credentials = format!("{}:{}", SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET);
+fn auth_header(spotify_credentials: &SpotifyAppCredentials) -> String {
+    let credentials = format!(
+        "{}:{}",
+        spotify_credentials.id(),
+        spotify_credentials.secret()
+    );
     format!("Basic {}", BASE64_STANDARD.encode(&credentials))
 }
