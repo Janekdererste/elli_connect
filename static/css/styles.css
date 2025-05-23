@@ -1,28 +1,88 @@
+/* Spotify-inspired styling */
 body {
-    font-family: Arial, sans-serif;
+    font-family: 'Circular', Helvetica, Arial, sans-serif;
     line-height: 1.6;
     margin: 0;
     padding: 0;
-    background-color: #f4f4f4;
+    background-color: #121212; /* Spotify dark background */
+    color: #ffffff;
 }
 
-.container {
-    width: 80%;
-    margin: 0 auto;
-    padding: 20px;
-    background-color: white;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    margin-top: 30px;
-    border-radius: 5px;
+/* Grid layout */
+.spotify-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    place-items: center;
+    min-height: 100vh;
+}
+
+.login-container {
+    max-width: 500px;
+    padding: 40px;
+    background-color: #181818; /* Slightly lighter than the main background */
+    border-radius: 8px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 h1 {
-    color: #333;
-    text-align: center;
+    color: #ffffff;
+    font-weight: 700;
+    margin-bottom: 20px;
+    font-size: 32px;
 }
 
 p {
-    text-align: center;
-    color: #666;
+    color: #b3b3b3; /* Spotify's secondary text color */
     font-size: 18px;
+    margin-bottom: 30px;
+    line-height: 1.5;
+}
+
+/* Spotify button styling */
+.spotify-button {
+    display: inline-block;
+    background-color: #1DB954; /* Spotify green */
+    color: #ffffff;
+    font-weight: 700;
+    text-decoration: none;
+    padding: 16px 32px;
+    border-radius: 30px;
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    border: none;
+}
+
+.spotify-button:hover {
+    background-color: #1ed760; /* Lighter Spotify green on hover */
+    transform: scale(1.05);
+}
+
+.spotify-button:active {
+    transform: scale(0.98);
+}
+
+/* Add responsiveness */
+@media (max-width: 600px) {
+    .login-container {
+        width: 85%;
+        padding: 25px;
+    }
+
+    h1 {
+        font-size: 24px;
+    }
+
+    p {
+        font-size: 16px;
+    }
+
+    .spotify-button {
+        padding: 14px 28px;
+        font-size: 14px;
+    }
 }
