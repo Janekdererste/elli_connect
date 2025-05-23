@@ -2,11 +2,9 @@ use crate::state::AppState;
 use crate::templates::{into_response, CallbackTemplate};
 use actix_session::Session;
 use actix_web::{get, web, HttpResponse, Responder, Scope};
-use askama::filters::format;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use rand::distributions::{Alphanumeric, DistString};
-use reqwest::{Error, Response};
 use serde::Deserialize;
 use url::Url;
 
