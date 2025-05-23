@@ -3,8 +3,15 @@ use askama::Template;
 
 // Template definitions
 #[derive(Template)]
+#[template(path = "connect.html")]
+pub struct ConnectTemplate {}
+
+// Template definitions
+#[derive(Template)]
 #[template(path = "index.html")]
-pub struct IndexTemplate {}
+pub struct IndexTemplate<'a> {
+    pub(crate) cover_url: &'a str,
+}
 
 #[derive(Template)]
 #[template(path = "callback.html")]
