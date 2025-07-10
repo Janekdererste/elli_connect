@@ -4,6 +4,7 @@ use actix_web::{get, web, HttpResponse, Responder, Scope};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use log::{info, log};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::time::{Duration, Instant};
@@ -20,7 +21,7 @@ struct CallbackParams {
     state: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct TokenResponse {
     pub access_token: String,
     pub token_type: String,
@@ -29,88 +30,39 @@ pub struct TokenResponse {
     pub refresh_token: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct CurrentlyPlaying {
-    pub device: Device,
-    pub repeat_state: String,
-    pub shuffle_state: bool,
-    pub context: Option<Context>,
     pub timestamp: u64,
     pub progress_ms: u64,
     pub is_playing: bool,
     pub item: Option<Track>,
     pub currently_playing_type: String,
-    pub actions: Actions,
 }
 
-#[derive(Deserialize)]
-pub struct Device {
-    pub id: Option<String>,
-    pub is_active: bool,
-    pub is_private_session: bool,
-    pub is_restricted: bool,
-    pub name: String,
-    #[serde(rename = "type")]
-    pub device_type: String,
-    pub volume_percent: Option<u8>,
-    pub supports_volume: bool,
-}
-
-#[derive(Deserialize)]
-pub struct Context {
-    #[serde(rename = "type")]
-    pub context_type: String,
-    pub href: String,
-    pub external_urls: ExternalUrls,
-    pub uri: String,
-}
-
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Track {
     pub album: Album,
     pub artists: Vec<Artist>,
-    pub available_markets: Vec<String>,
-    pub disc_number: u32,
     pub duration_ms: u64,
-    pub explicit: bool,
-    pub external_ids: ExternalIds,
-    pub external_urls: ExternalUrls,
     pub href: String,
     pub id: String,
-    pub is_playable: Option<bool>,
-    pub restrictions: Option<Restrictions>,
     pub name: String,
-    pub popularity: u32,
-    pub preview_url: Option<String>,
-    pub track_number: u32,
-    #[serde(rename = "type")]
-    pub track_type: String,
-    pub uri: String,
-    pub is_local: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Album {
     pub album_type: String,
-    pub total_tracks: u32,
-    pub available_markets: Vec<String>,
-    pub external_urls: ExternalUrls,
     pub href: String,
     pub id: String,
     pub images: Vec<Image>,
     pub name: String,
-    pub release_date: String,
-    pub release_date_precision: String,
-    pub restrictions: Option<Restrictions>,
     #[serde(rename = "type")]
     pub album_type_detail: String,
     pub uri: String,
-    pub artists: Vec<Artist>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Artist {
-    pub external_urls: ExternalUrls,
     pub href: String,
     pub id: String,
     pub name: String,
@@ -119,44 +71,37 @@ pub struct Artist {
     pub uri: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Image {
     pub url: String,
     pub height: u32,
     pub width: u32,
 }
 
-#[derive(Deserialize)]
-pub struct ExternalUrls {
-    pub spotify: String,
+impl Default for Image {
+    fn default() -> Self {
+        Image {
+            url: String::new(),
+            width: 0,
+            height: 0,
+        }
+    }
 }
 
-#[derive(Deserialize)]
-pub struct ExternalIds {
-    pub isrc: Option<String>,
-    pub ean: Option<String>,
-    pub upc: Option<String>,
+#[derive(Clone)]
+pub struct SpotifyClient {
+    client: Client,
 }
 
-#[derive(Deserialize)]
-pub struct Restrictions {
-    pub reason: String,
+impl SpotifyClient {
+    pub fn new() -> Self {
+        Self {
+            client: Client::new(),
+        }
+    }
 }
 
-#[derive(Deserialize)]
-pub struct Actions {
-    pub interrupting_playback: bool,
-    pub pausing: bool,
-    pub resuming: bool,
-    pub seeking: bool,
-    pub skipping_next: bool,
-    pub skipping_prev: bool,
-    pub toggling_repeat_context: bool,
-    pub toggling_shuffle: bool,
-    pub toggling_repeat_track: bool,
-    pub transferring_playback: bool,
-}
-
+#[derive(Debug)]
 pub struct SpotifyAccess {
     access_token: String,
     refresh_token: String,
@@ -181,8 +126,7 @@ impl SpotifyAccess {
     }
 
     pub fn should_refresh(&self) -> bool {
-        //Instant::now() > self.expires_at
-        true
+        Instant::now() > self.expires_at
     }
 
     pub async fn refresh(
@@ -194,6 +138,10 @@ impl SpotifyAccess {
             ("refresh_token", spotify_access.refresh_token()),
         ];
 
+        info!(
+            "Spotify::refresh: Requesting new access token with refresh token {}",
+            spotify_access.refresh_token
+        );
         let result = Self::token(&form_data, spotify_credentials).await?;
         let refresh_token = result
             .refresh_token
@@ -211,6 +159,7 @@ impl SpotifyAccess {
             ("code", code),
             ("redirect_uri", REDIRECT_URI),
         ];
+        info!("Token request from authorize");
         let result = Self::token(&form_data, spotify_app_credentials).await?;
 
         let access = SpotifyAccess::new(
@@ -233,10 +182,20 @@ impl SpotifyAccess {
             .form(form_data)
             .send()
             .await?
-            .json::<TokenResponse>()
+            .text()
             .await?;
 
-        Ok(token_response)
+        info!("Token response: {:#?}", token_response);
+
+        let parsed_response = serde_json::from_str::<TokenResponse>(&token_response).expect(
+            "Could not deserialize token response. \
+                 Please check if the Spotify API has changed.",
+        );
+
+        //.json::<TokenResponse>()
+        //.await?;
+
+        Ok(parsed_response)
     }
 
     fn calculate_expiry(expires_in: u64) -> Instant {

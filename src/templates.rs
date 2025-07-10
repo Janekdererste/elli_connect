@@ -1,3 +1,4 @@
+use crate::PlayingModel;
 use actix_web::HttpResponse;
 use askama::Template;
 
@@ -10,7 +11,8 @@ pub struct ConnectTemplate {}
 #[derive(Template)]
 #[template(path = "index.html")]
 pub struct IndexTemplate<'a> {
-    pub(crate) cover_url: &'a str,
+    pub(crate) playing_status: &'a str,
+    pub(crate) player_status: PlayingModel,
 }
 
 #[derive(Template)]

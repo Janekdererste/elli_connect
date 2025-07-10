@@ -17,6 +17,29 @@ body {
     min-height: 100vh;
 }
 
+.album-art {
+    max-width: 20rem;
+}
+
+.now-playing-container {
+    display: flex;
+    flex-direction: column;
+}
+
+.track-details {
+    display: flex;
+    flex-direction: column;
+}
+
+.track-name {
+    margin-bottom: 0;
+    margin-top: 0.2em;
+}
+
+.secondary-text {
+    color: #b3b3b3;
+}
+
 .login-container {
     max-width: 500px;
     padding: 40px;
