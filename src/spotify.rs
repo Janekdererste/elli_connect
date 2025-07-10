@@ -3,6 +3,7 @@ use actix_session::Session;
 use actix_web::{get, web, HttpResponse, Responder, Scope};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
+use image::DynamicImage;
 use log::info;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -126,6 +127,19 @@ impl SpotifyClient {
                 .expect("Failed to parse currently playing");
             Some(result)
         }
+    }
+
+    pub async fn get_image(&self, image_url: &str) -> DynamicImage {
+        let response = self
+            .client
+            .get(image_url)
+            .send()
+            .await
+            .expect("Failed to fetch image");
+        let data = response.bytes().await.expect("Failed to read image");
+        let image = image::load_from_memory(&data).expect("Failed to parse image");
+
+        image
     }
 
     async fn ensure_fresh_token(user_id: &str, state: web::Data<AppState>) -> Arc<SpotifyAccess> {

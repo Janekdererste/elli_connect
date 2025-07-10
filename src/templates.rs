@@ -12,6 +12,7 @@ pub struct ConnectTemplate {}
 #[template(path = "index.html")]
 pub struct IndexTemplate {
     pub(crate) player_status: PlayingModel,
+    pub color_matrix: ColorMatrixModel,
 }
 
 #[derive(Template)]
@@ -28,6 +29,24 @@ pub fn into_response<T: Template>(template: T) -> HttpResponse {
     }
 }
 
+pub struct ColorMatrixModel {
+    pub width: u32,
+    pub height: u32,
+    pub colors: Vec<String>, // Flattened row-major hex color strings
+}
+
+impl ColorMatrixModel {
+    pub fn default() -> Self {
+        let default_color = String::from("#ff5157");
+        let colors = vec![default_color.clone(); 25];
+        Self {
+            width: 5,
+            height: 5,
+            colors,
+        }
+    }
+}
+
 pub struct PlayingModel {
     is_playing: bool,
     progress_ms: u64,
@@ -35,7 +54,7 @@ pub struct PlayingModel {
     name: String,
     artists: Vec<String>,
     album: String,
-    image_url: String,
+    pub image_url: String,
 }
 
 impl PlayingModel {
