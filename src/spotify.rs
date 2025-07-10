@@ -3,10 +3,11 @@ use actix_session::Session;
 use actix_web::{get, web, HttpResponse, Responder, Scope};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
-use log::{info, log};
+use log::info;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use url::Url;
 
@@ -99,6 +100,47 @@ impl SpotifyClient {
             client: Client::new(),
         }
     }
+
+    pub async fn get_current_track(
+        &self,
+        user_id: &str,
+        state: web::Data<AppState>,
+    ) -> Option<CurrentlyPlaying> {
+        let access = Self::ensure_fresh_token(user_id, state).await;
+        let bearer = format!("Bearer {}", access.access_token());
+
+        let response = self
+            .client
+            .get("https://api.spotify.com/v1/me/player/currently-playing")
+            .header("Authorization", bearer)
+            .send()
+            .await
+            .expect("Failed to fetch currently playing");
+
+        if response.status() == reqwest::StatusCode::NO_CONTENT {
+            None
+        } else {
+            let result = response
+                .json::<CurrentlyPlaying>()
+                .await
+                .expect("Failed to parse currently playing");
+            Some(result)
+        }
+    }
+
+    async fn ensure_fresh_token(user_id: &str, state: web::Data<AppState>) -> Arc<SpotifyAccess> {
+        let access = state
+            .get_access(user_id)
+            .expect("Could not get access token");
+        if access.should_refresh() {
+            let spotify_credentials = state.get_spotify_credentials();
+            let new_access = SpotifyAccess::refresh(&access, spotify_credentials)
+                .await
+                .unwrap();
+            state.insert_access(user_id, new_access);
+        }
+        state.get_access(user_id).unwrap()
+    }
 }
 
 #[derive(Debug)]
@@ -137,11 +179,6 @@ impl SpotifyAccess {
             ("grant_type", "refresh_token"),
             ("refresh_token", spotify_access.refresh_token()),
         ];
-
-        info!(
-            "Spotify::refresh: Requesting new access token with refresh token {}",
-            spotify_access.refresh_token
-        );
         let result = Self::token(&form_data, spotify_credentials).await?;
         let refresh_token = result
             .refresh_token
@@ -159,7 +196,6 @@ impl SpotifyAccess {
             ("code", code),
             ("redirect_uri", REDIRECT_URI),
         ];
-        info!("Token request from authorize");
         let result = Self::token(&form_data, spotify_app_credentials).await?;
 
         let access = SpotifyAccess::new(
@@ -185,15 +221,10 @@ impl SpotifyAccess {
             .text()
             .await?;
 
-        info!("Token response: {:#?}", token_response);
-
         let parsed_response = serde_json::from_str::<TokenResponse>(&token_response).expect(
             "Could not deserialize token response. \
                  Please check if the Spotify API has changed.",
         );
-
-        //.json::<TokenResponse>()
-        //.await?;
 
         Ok(parsed_response)
     }
@@ -246,7 +277,6 @@ async fn callback(
         if state != params.state {
             return HttpResponse::BadRequest().body("State mismatch");
         } else {
-            println!("State matches");
             session
                 .remove("state")
                 .expect("Could not remove state from session");
@@ -267,33 +297,6 @@ async fn callback(
         .append_header(("Location", "/"))
         .finish()
 }
-
-async fn obtain_token(
-    code: &str,
-    spotify_credentials: &SpotifyAppCredentials,
-) -> Result<TokenResponse, reqwest::Error> {
-    let client = reqwest::Client::new();
-    let auth_header = auth_header(spotify_credentials);
-
-    let form_data = [
-        ("grant_type", "authorization_code"),
-        ("code", code),
-        ("redirect_uri", REDIRECT_URI),
-    ];
-
-    let token_response = client
-        .post(SPOTIFY_TOKEN_URL)
-        .header("Authorization", auth_header)
-        .form(&form_data)
-        .send()
-        .await?
-        .json::<TokenResponse>()
-        .await?;
-
-    Ok(token_response)
-}
-
-async fn get_current_track() -> () {}
 
 fn auth_header(spotify_credentials: &SpotifyAppCredentials) -> String {
     let credentials = format!(
