@@ -73,23 +73,35 @@ impl PlayingModel {
 
 impl From<CurrentlyPlaying> for PlayingModel {
     fn from(value: CurrentlyPlaying) -> Self {
-        let track = value.item.unwrap();
-        let artists = track.artists.into_iter().map(|a| a.name).collect();
-        let image_url = track
-            .album
-            .images
-            .into_iter()
-            .max_by(|a, b| a.width.cmp(&b.width))
-            .unwrap_or_default()
-            .url;
-        Self {
-            is_playing: value.is_playing,
-            progress_ms: value.progress_ms,
-            currently_playing_type: value.currently_playing_type,
-            name: track.name,
-            artists,
-            album: track.album.name,
-            image_url,
+        if let Some(track) = value.item {
+            let artists = track.artists.into_iter().map(|a| a.name).collect();
+            let image_url = track
+                .album
+                .images
+                .into_iter()
+                .max_by(|a, b| a.width.cmp(&b.width))
+                .unwrap_or_default()
+                .url;
+            Self {
+                is_playing: value.is_playing,
+                progress_ms: value.progress_ms,
+                currently_playing_type: value.currently_playing_type,
+                name: track.name,
+                artists,
+                album: track.album.name,
+                image_url,
+            }
+        } else {
+            Self {
+                is_playing: value.is_playing,
+                progress_ms: value.progress_ms,
+                currently_playing_type: value.currently_playing_type.clone(),
+                name: value.currently_playing_type.to_string(),
+                artists: vec!["No data available for currently playing media".to_string()],
+                album: "".to_string(),
+                image_url: "https://elemonlabs.com/wp-content/uploads/2020/08/logo_transparent.png"
+                    .to_string(),
+            }
         }
     }
 }

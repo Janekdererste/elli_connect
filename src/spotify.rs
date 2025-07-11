@@ -1,13 +1,14 @@
-use crate::state::{get_client_id, rnd_string, AppState, SpotifyAppCredentials};
+use crate::state::{get_session_id, rnd_string, AppState, SpotifyAppCredentials};
 use actix_session::Session;
+use actix_web::error::ErrorInternalServerError;
 use actix_web::{get, web, HttpResponse, Responder, Scope};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use image::DynamicImage;
-use log::info;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use std::io::Stderr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use url::Url;
@@ -106,8 +107,8 @@ impl SpotifyClient {
         &self,
         user_id: &str,
         state: web::Data<AppState>,
-    ) -> Option<CurrentlyPlaying> {
-        let access = Self::ensure_fresh_token(user_id, state).await;
+    ) -> Result<Option<CurrentlyPlaying>, Box<dyn std::error::Error>> {
+        let access = Self::ensure_fresh_token(user_id, state).await?;
         let bearer = format!("Bearer {}", access.access_token());
 
         let response = self
@@ -115,57 +116,56 @@ impl SpotifyClient {
             .get("https://api.spotify.com/v1/me/player/currently-playing")
             .header("Authorization", bearer)
             .send()
-            .await
-            .expect("Failed to fetch currently playing");
+            .await?;
 
         if response.status() == reqwest::StatusCode::NO_CONTENT {
-            None
+            Ok(None)
         } else {
-            let result = response
-                .json::<CurrentlyPlaying>()
-                .await
-                .expect("Failed to parse currently playing");
-            Some(result)
+            let result = response.json::<CurrentlyPlaying>().await?;
+            Ok(Some(result))
         }
     }
 
-    pub async fn get_image(&self, image_url: &str) -> DynamicImage {
-        let response = self
-            .client
-            .get(image_url)
-            .send()
-            .await
-            .expect("Failed to fetch image");
-        let data = response.bytes().await.expect("Failed to read image");
-        let image = image::load_from_memory(&data).expect("Failed to parse image");
+    pub async fn get_image(
+        &self,
+        image_url: &str,
+    ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
+        let response = self.client.get(image_url).send().await?;
+        let data = response.bytes().await?;
+        let image = image::load_from_memory(&data)?;
 
-        image
+        Ok(image)
     }
 
-    async fn ensure_fresh_token(user_id: &str, state: web::Data<AppState>) -> Arc<SpotifyAccess> {
+    async fn ensure_fresh_token(
+        user_id: &str,
+        state: web::Data<AppState>,
+    ) -> Result<Arc<SpotifyAccess>, Box<dyn std::error::Error>> {
         let access = state
             .get_access(user_id)
-            .expect("Could not get access token");
+            .ok_or_else(|| "No access token found, but should be present.")?;
         if access.should_refresh() {
             let spotify_credentials = state.get_spotify_credentials();
-            let new_access = SpotifyAccess::refresh(&access, spotify_credentials)
-                .await
-                .unwrap();
+            let new_access = SpotifyAccess::refresh(&access, spotify_credentials).await?;
             state.insert_access(user_id, new_access);
         }
-        state.get_access(user_id).unwrap()
+        // we use unwrap because we have just inserted the access_token
+        let result = state
+            .get_access(user_id)
+            .ok_or_else(|| "Failed to retreive freshly inserted token")?;
+        Ok(result)
     }
 }
 
 #[derive(Debug)]
 pub struct SpotifyAccess {
     access_token: String,
-    refresh_token: String,
+    refresh_token: Option<String>,
     expires_at: Instant,
 }
 
 impl SpotifyAccess {
-    pub fn new(access_token: String, refresh_token: String, expires_in: u64) -> Self {
+    pub fn new(access_token: String, refresh_token: Option<String>, expires_in: u64) -> Self {
         Self {
             access_token,
             refresh_token,
@@ -177,7 +177,7 @@ impl SpotifyAccess {
         &self.access_token
     }
 
-    pub fn refresh_token(&self) -> &str {
+    pub fn refresh_token(&self) -> &Option<String> {
         &self.refresh_token
     }
 
@@ -188,17 +188,22 @@ impl SpotifyAccess {
     pub async fn refresh(
         spotify_access: &SpotifyAccess,
         spotify_credentials: &SpotifyAppCredentials,
-    ) -> Result<Self, reqwest::Error> {
-        let form_data = [
-            ("grant_type", "refresh_token"),
-            ("refresh_token", spotify_access.refresh_token()),
-        ];
-        let result = Self::token(&form_data, spotify_credentials).await?;
-        let refresh_token = result
-            .refresh_token
-            .unwrap_or_else(|| spotify_access.refresh_token.clone());
-        let new_access = SpotifyAccess::new(result.access_token, refresh_token, result.expires_in);
-        Ok(new_access)
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        if let Some(refresh_token) = spotify_access.refresh_token() {
+            let form_data = [
+                ("grant_type", "refresh_token"),
+                ("refresh_token", &refresh_token),
+            ];
+            let result = Self::token(&form_data, spotify_credentials).await?;
+            // let new_refresh_token = result
+            //     .refresh_token
+            //     .unwrap_or_else(|| refresh_token.clone());
+            let new_access =
+                SpotifyAccess::new(result.access_token, result.refresh_token, result.expires_in);
+            Ok(new_access)
+        } else {
+            Err("No refresh token")?
+        }
     }
 
     async fn authorize(
@@ -212,11 +217,8 @@ impl SpotifyAccess {
         ];
         let result = Self::token(&form_data, spotify_app_credentials).await?;
 
-        let access = SpotifyAccess::new(
-            result.access_token,
-            result.refresh_token.unwrap(),
-            result.expires_in,
-        );
+        let access =
+            SpotifyAccess::new(result.access_token, result.refresh_token, result.expires_in);
         Ok(access)
     }
 
@@ -264,6 +266,7 @@ async fn authenticate(session: Session, app_state: web::Data<AppState>) -> impl 
         .insert("state", &state)
         .expect("Could not store state into session");
 
+    // we can use unwrap here, as we hardcoded this url
     let mut url = Url::parse(SPOTIFY_AUTH_URL).unwrap();
     url.query_pairs_mut()
         .append_pair("response_type", "code")
@@ -282,34 +285,31 @@ async fn callback(
     params: web::Query<CallbackParams>,
     session: Session,
     state: web::Data<AppState>,
-) -> impl Responder {
+) -> Result<HttpResponse, actix_web::Error> {
     // make sure the state matches what we have sent
     if let Some(state) = session
         .get::<String>("state")
-        .expect("Could not get state from session")
+        .map_err(ErrorInternalServerError)?
     {
         if state != params.state {
-            return HttpResponse::BadRequest().body("State mismatch");
+            return Ok(HttpResponse::BadRequest().body("State mismatch"));
         } else {
-            session
-                .remove("state")
-                .expect("Could not remove state from session");
+            session.remove("state");
         }
     }
 
     let access = SpotifyAccess::authorize(&params.code, state.get_spotify_credentials())
         .await
-        .expect("Could not authorize with Spotify");
+        .map_err(ErrorInternalServerError)?;
 
-    // get the internal client id
-    let client_id = get_client_id(&session);
+    // get the internal session id
+    let session_id = get_session_id(&session).map_err(ErrorInternalServerError)?;
+    // store the session id and the token response in the state
+    state.insert_access(&session_id, access);
 
-    // store the client id and the token response in the state
-    state.insert_access(&client_id, access);
-
-    HttpResponse::Found()
+    Ok(HttpResponse::Found()
         .append_header(("Location", "/"))
-        .finish()
+        .finish())
 }
 
 fn auth_header(spotify_credentials: &SpotifyAppCredentials) -> String {

@@ -3,12 +3,13 @@ mod state;
 mod templates;
 
 use crate::spotify::SpotifyClient;
-use crate::state::{get_client_id, AppState};
+use crate::state::{get_session_id, AppState};
 use crate::templates::{into_response, ColorMatrixModel, IndexTemplate, PlayingModel};
 use actix_files as fs;
 use actix_session::storage::CookieSessionStore;
 use actix_session::{Session, SessionMiddleware};
 use actix_web::cookie::Key;
+use actix_web::error::ErrorInternalServerError;
 use actix_web::{get, web, App, HttpResponse, HttpServer};
 use env_logger::Env;
 use image::imageops::FilterType;
@@ -20,13 +21,13 @@ async fn index(
     session: Session,
     state: web::Data<AppState>,
     spotify_client: web::Data<SpotifyClient>,
-) -> HttpResponse {
-    let client_id = get_client_id(&session);
+) -> Result<HttpResponse, actix_web::Error> {
+    let session_id = get_session_id(&session).map_err(ErrorInternalServerError)?;
 
-    if let Some(_) = state.get_access(&client_id) {
-        connected_index(&client_id, state, spotify_client).await
+    if let Some(_) = state.get_access(&session_id) {
+        Ok(connected_index(&session_id, state, spotify_client).await?)
     } else {
-        into_response(ConnectTemplate {})
+        Ok(into_response(ConnectTemplate {}))
     }
 }
 
@@ -34,10 +35,14 @@ async fn connected_index(
     user_id: &str,
     state: web::Data<AppState>,
     spotify_client: web::Data<SpotifyClient>,
-) -> HttpResponse {
-    if let Some(currently_playing) = spotify_client.get_current_track(user_id, state).await {
+) -> Result<HttpResponse, actix_web::Error> {
+    if let Some(currently_playing) = spotify_client
+        .get_current_track(user_id, state)
+        .await
+        .map_err(ErrorInternalServerError)?
+    {
         let model = PlayingModel::from(currently_playing);
-        let image = spotify_client.get_image(&model.image_url).await;
+        let image = spotify_client.get_image(&model.image_url).await?;
         // use fixed sample size for now. This should be taken from the lamp actually.
         let downsized_image = image.resize(5, 5, FilterType::Nearest);
         let rgb_image = downsized_image.to_rgb8();
@@ -53,15 +58,15 @@ async fn connected_index(
             colors,
         };
 
-        into_response(IndexTemplate {
+        Ok(into_response(IndexTemplate {
             player_status: model,
             color_matrix: matrix_model,
-        })
+        }))
     } else {
-        into_response(IndexTemplate {
+        Ok(into_response(IndexTemplate {
             player_status: PlayingModel::new(),
             color_matrix: ColorMatrixModel::default(),
-        })
+        }))
     }
 }
 

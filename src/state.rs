@@ -2,6 +2,7 @@ use crate::spotify::SpotifyAccess;
 use actix_session::Session;
 use rand::distributions::{Alphanumeric, DistString};
 use std::collections::HashMap;
+use std::error::Error;
 use std::sync::{Arc, RwLock};
 
 pub struct AppState {
@@ -19,11 +20,13 @@ impl AppState {
     }
 
     pub fn insert_access(&self, client_id: &str, access: SpotifyAccess) {
+        // I think unwrap is fine here, as the insert should not panic
         let mut tokens = self.spotify_user_access.write().unwrap();
         tokens.insert(client_id.to_string(), Arc::new(access));
     }
 
     pub fn get_access(&self, client_id: &str) -> Option<Arc<SpotifyAccess>> {
+        // I think unwrap is fine here, as the get should not panic
         let tokens = self.spotify_user_access.read().unwrap();
         if let Some(access) = tokens.get(client_id) {
             Some(access.clone())
@@ -59,15 +62,13 @@ impl SpotifyAppCredentials {
     }
 }
 
-pub fn get_client_id(session: &Session) -> String {
-    if let Some(client_id) = session.get::<String>("client_id").expect("Session Error") {
-        client_id
+pub fn get_session_id(session: &Session) -> Result<String, Box<dyn Error>> {
+    if let Some(session_id) = session.get::<String>("session_id")? {
+        Ok(session_id)
     } else {
-        let client_id = rnd_string();
-        session
-            .insert("client_id", &client_id)
-            .expect("Could not store client_id into session");
-        client_id
+        let session_id = rnd_string();
+        session.insert("session_id", &session_id)?;
+        Ok(session_id)
     }
 }
 
