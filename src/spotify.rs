@@ -8,7 +8,6 @@ use image::DynamicImage;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
-use std::io::Stderr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use url::Url;
@@ -27,15 +26,12 @@ struct CallbackParams {
 #[derive(Deserialize, Debug)]
 pub struct TokenResponse {
     pub access_token: String,
-    pub token_type: String,
-    pub scope: String,
     pub expires_in: u64,
     pub refresh_token: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct CurrentlyPlaying {
-    pub timestamp: u64,
     pub progress_ms: u64,
     pub is_playing: bool,
     pub item: Option<Track>,
@@ -46,38 +42,23 @@ pub struct CurrentlyPlaying {
 pub struct Track {
     pub album: Album,
     pub artists: Vec<Artist>,
-    pub duration_ms: u64,
-    pub href: String,
-    pub id: String,
     pub name: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct Album {
-    pub album_type: String,
-    pub href: String,
-    pub id: String,
     pub images: Vec<Image>,
     pub name: String,
-    #[serde(rename = "type")]
-    pub album_type_detail: String,
-    pub uri: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct Artist {
-    pub href: String,
-    pub id: String,
     pub name: String,
-    #[serde(rename = "type")]
-    pub artist_type: String,
-    pub uri: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct Image {
     pub url: String,
-    pub height: u32,
     pub width: u32,
 }
 
@@ -86,7 +67,6 @@ impl Default for Image {
         Image {
             url: String::new(),
             width: 0,
-            height: 0,
         }
     }
 }

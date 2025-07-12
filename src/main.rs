@@ -14,6 +14,8 @@ use actix_web::error::ErrorInternalServerError;
 use actix_web::{get, web, App, HttpResponse, HttpServer};
 use env_logger::Env;
 use image::imageops::FilterType;
+use image::{GenericImageView, Pixel};
+use log::info;
 use std::env;
 use templates::ConnectTemplate;
 
@@ -53,6 +55,7 @@ async fn connected_index(
             .pixels()
             .map(|p| format!("#{:02x}{:02x}{:02x}", p[0], p[1], p[2]))
             .collect();
+        info!("{colors:#?}");
         let matrix_model = ColorMatrixModel {
             width,
             height,

@@ -7,10 +7,9 @@ use serde_json::{from_str, to_string};
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
+use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
-use url::Url;
 
 pub struct SocketConfig {
     host: String,
@@ -67,7 +66,7 @@ struct AuthMessage {
     from: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct RequestMessage {
     request: String,
     param: String,
@@ -75,29 +74,106 @@ struct RequestMessage {
     to: String,
 }
 
-impl RequestMessage {
-    pub fn new(req_type: String, from: String, to: String) -> Self {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PixelData {
+    hue: u8,
+    sat: u8,
+    val: u8,
+    row: usize,
+    col: usize,
+}
+
+impl PixelData {
+    pub fn from_rgb(r: u8, g: u8, b: u8, row: usize, col: usize) -> Self {
+        let (hue, sat, val) = Self::rgb_to_hsv(r, g, b);
         Self {
-            request: String::from("read"),
-            param: req_type,
-            from,
-            to,
+            hue,
+            sat,
+            val,
+            row,
+            col,
         }
+    }
+
+    fn diff_c(c: f32, v: f32, diff: f32) -> f32 {
+        (v - c) / 6.0 / diff + 0.5
+    }
+
+    fn rgb_to_hsv(r: u8, g: u8, b: u8) -> (u8, u8, u8) {
+        let rabs: f32 = r as f32 / 255.;
+        let gabs: f32 = g as f32 / 255.;
+        let babs: f32 = b as f32 / 255.;
+        let v = rabs.max(gabs).max(babs);
+        let mut h: f32 = 0.0;
+        let mut s: f32 = 0.0;
+
+        let diff = v - rabs.min(gabs).min(babs);
+        if diff == 0. {
+            h = 0.0;
+            s = 0.0;
+        } else {
+            s = diff / v;
+            let rr = Self::diff_c(rabs, v, diff);
+            let gg = Self::diff_c(gabs, v, diff);
+            let bb = Self::diff_c(babs, v, diff);
+
+            if rabs == v {
+                h = bb - gg;
+            } else if gabs == v {
+                h = 1.0 / 3.0 + rr - bb;
+            } else if babs == v {
+                h = 2.0 / 3.0 + gg - rr;
+            }
+            if h < 0.0 {
+                h += 1.0;
+            } else if h > 1.0 {
+                h -= 1.0;
+            }
+        }
+        let h_abs = h * 255.0;
+        let s_abs = s * 255.0;
+        let v_abs = v * 255.0;
+        (
+            h_abs.round() as u8,
+            s_abs.round() as u8,
+            v_abs.round() as u8,
+        )
     }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(untagged)]
-pub enum SocketMessage {
-    Authentication {
-        connection: String,
-    },
-    Write {
-        request: String,
-        param: String,
-        #[serde(flatten)] // This flattens the remaining fields into the struct
-        params: WriteParams,
-    },
+pub struct PixelMessage {
+    #[serde(flatten)]
+    pub pixel: PixelData,
+    #[serde(flatten)]
+    pub request: RequestMessage,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(untagged, rename_all = "lowercase")]
+enum SocketMessage {
+    Authentication(AuthenticationMessage),
+    Write(WriteMessage),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct AuthenticationMessage {
+    connection: String,
+}
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "param")]
+pub enum WriteMessage {
+    #[serde(rename = "name")]
+    DeviceName(DeviceNameMessage),
+    #[serde(rename = "pixel")]
+    Pixel(PixelMessage),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct DeviceNameMessage {
+    pub request: String,
+    pub name: String,
+    pub to: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -116,14 +192,6 @@ pub enum WriteParams {
         to: String,
     },
 }
-
-#[derive(Deserialize)]
-struct WebSocketMessage {
-    connection: Option<String>,
-    // Add other fields as needed
-}
-
-struct WriteSocketMessage {}
 
 pub struct ElliSocket {
     write: futures_util::stream::SplitSink<
@@ -144,7 +212,7 @@ pub struct ElliSocket {
 impl ElliSocket {
     pub async fn new(config: SocketConfig) -> Result<Self, Box<dyn Error>> {
         info!("Connecting socket to: {}", config.host);
-        let (ws_stream, res) = connect_async(&config.host).await?;
+        let (ws_stream, _res) = connect_async(&config.host).await?;
         let (write, read) = ws_stream.split();
 
         info!("Socket connected.");
@@ -174,23 +242,38 @@ impl ElliSocket {
         Ok(())
     }
 
-    async fn request_name(&mut self) -> Result<(), Box<dyn Error>> {
-        let request_name = RequestMessage::new(
-            String::from("name"),
-            self.config.b_code.clone(),
-            self.config.d_code.clone(),
-        );
-        info!("Sending name request message");
-        let message = Utf8Bytes::from(to_string(&request_name)?);
-        self.write.send(Message::Text(message)).await?;
-        info!("After sending name request message");
+    async fn send_pixels(&mut self, pixels: Vec<PixelData>) -> Result<(), Box<dyn Error>> {
+        // TODO implement pixel writing.
+        // create some message
+        for pixel in pixels.into_iter() {
+            let request = PixelMessage {
+                pixel,
+                request: RequestMessage {
+                    request: String::from("write"),
+                    param: String::from("pixel"),
+                    from: self.config.b_code.clone(),
+                    to: self.config.d_code.clone(),
+                },
+            };
+
+            let message = Message::Text(Utf8Bytes::from(to_string(&request)?));
+            info!("Sending pixel message: {:#?}", message);
+            self.write.send(message).await?;
+        }
         Ok(())
     }
 
-    pub async fn send_message(&mut self, message: &str) -> Result<(), Box<dyn Error>> {
-        self.write
-            .send(Message::Text(Utf8Bytes::from(message)))
-            .await?;
+    async fn request_name(&mut self) -> Result<(), Box<dyn Error>> {
+        let request = RequestMessage {
+            request: String::from("read"),
+            param: String::from("name"),
+            from: self.config.b_code.clone(),
+            to: self.config.d_code.clone(),
+        };
+        info!("Sending name request message");
+        let message = Utf8Bytes::from(to_string(&request)?);
+        self.write.send(Message::Text(message)).await?;
+        info!("After sending name request message");
         Ok(())
     }
 
@@ -231,49 +314,54 @@ impl ElliSocket {
         info!("Got text message: {}", text);
         let msg = from_str::<SocketMessage>(&text)?;
         match msg {
-            SocketMessage::Authentication { .. } => {
-                info!("Received authentication message.");
-                self.status = ConnectionStatus::Authenticated;
-                self.request_name().await?;
-            }
-            SocketMessage::Write {
-                request,
-                param,
-                params,
-            } => match params {
-                WriteParams::DeviceName { name, to } => {
-                    info!("Received device name message: {} to {}", name, to);
-                    self.status = ConnectionStatus::Live;
-                }
-                WriteParams::Pixel {
-                    row,
-                    col,
-                    hue,
-                    sat,
-                    val,
-                    to,
-                } => {
-                    info!(
-                        "Received pixel message: {} {} {} {} {} {}",
-                        row, col, hue, sat, val, to
-                    );
-                }
-            },
+            SocketMessage::Authentication(msg) => self.handle_authenticated(msg).await?,
+            SocketMessage::Write(msg) => self.handle_write(msg),
         }
 
         Ok(())
     }
 
-    fn handle_close(&mut self) {
-        self.status = ConnectionStatus::Offline;
+    async fn handle_authenticated(
+        &mut self,
+        msg: AuthenticationMessage,
+    ) -> Result<(), Box<dyn Error>> {
+        info!("Received authentication message.");
+        if &msg.connection == "ok" {
+            self.status = ConnectionStatus::Authenticated;
+            self.request_name().await?;
+            Ok(())
+        } else {
+            self.status = ConnectionStatus::Error;
+            Err("Authentication failed.".into())
+        }
     }
 
-    fn is_connected(msg: &WebSocketMessage) -> bool {
-        if let Some(status) = &msg.connection {
-            status == "ok"
-        } else {
-            false
+    fn handle_write(&mut self, msg: WriteMessage) {
+        match msg {
+            WriteMessage::DeviceName(d_msg) => self.handle_device_name(d_msg),
+            WriteMessage::Pixel(p_msg) => self.handle_pixel(p_msg),
         }
+    }
+
+    fn handle_device_name(&mut self, msg: DeviceNameMessage) {
+        info!("Received device name message: {} to {}", msg.name, msg.to);
+        self.status = ConnectionStatus::Live;
+    }
+
+    fn handle_pixel(&mut self, msg: PixelMessage) {
+        info!(
+            "Received pixel message: {} {} {} {} {} {}",
+            msg.pixel.row,
+            msg.pixel.col,
+            msg.pixel.hue,
+            msg.pixel.sat,
+            msg.pixel.val,
+            msg.request.to
+        );
+    }
+
+    fn handle_close(&mut self) {
+        self.status = ConnectionStatus::Offline;
     }
 }
 
@@ -313,12 +401,8 @@ mod tests {
         let mut socket = ElliSocket::new(config)
             .await
             .expect("Failed to create socket");
-        // socket
-        //     .send_auth_msg()
-        //     .await
-        //     .expect("Failed to send authentication message");
 
-        tokio::time::timeout(Duration::from_secs(50), async {
+        tokio::time::timeout(Duration::from_secs(5), async {
             while socket.status != ConnectionStatus::Live {
                 socket
                     .receive_message()
@@ -328,5 +412,79 @@ mod tests {
         })
         .await
         .expect("Timeout timed out.");
+    }
+
+    #[tokio::test]
+    async fn test_send_pixel() {
+        // Initialize logger to see info! messages
+        env_logger::builder()
+            .filter_level(log::LevelFilter::Info)
+            .is_test(true)
+            .init();
+
+        let config = SocketConfig::from_ccc("0FBL3E2B3UPU4R9Z").expect("Failed to parse CCC");
+        let mut socket = ElliSocket::new(config)
+            .await
+            .expect("Failed to create socket");
+
+        // connect to the server
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while socket.status != ConnectionStatus::Live {
+                socket
+                    .receive_message()
+                    .await
+                    .expect("Failed to receive message");
+            }
+        })
+        .await
+        .expect("Authentication timed out");
+
+        let width = 5;
+        let height = 5;
+        let data = in_colors_data();
+        let mut pixels = Vec::new();
+        for col in 0..height {
+            for row in 0..width {
+                let index = row * width + col;
+                let rgb = data[index];
+                let pixel = PixelData::from_rgb(rgb.0, rgb.1, rgb.2, row, col);
+                pixels.push(pixel);
+            }
+        }
+
+        socket
+            .send_pixels(pixels)
+            .await
+            .expect("Failed to send pixels");
+    }
+
+    fn in_colors_data() -> Vec<(u8, u8, u8)> {
+        vec![
+            (241, 142, 23),  // #f18e17
+            (230, 71, 29),   // #e6471d
+            (223, 10, 56),   // #df0a38
+            (223, 6, 87),    // #df0657
+            (228, 22, 122),  // #e4167a
+            (251, 214, 20),  // #fbd614
+            (241, 142, 23),  // #f18e17
+            (223, 10, 56),   // #df0a38
+            (228, 22, 122),  // #e4167a
+            (216, 6, 129),   // #d80681
+            (174, 202, 32),  // #aeca20
+            (174, 202, 32),  // #aeca20
+            (63, 69, 145),   // #3f4591
+            (136, 31, 126),  // #881f7e
+            (136, 31, 126),  // #881f7e
+            (96, 178, 54),   // #60b236
+            (255, 255, 255), // #ffffff
+            (39, 132, 199),  // #2784c7
+            (49, 54, 135),   // #313687
+            (91, 37, 121),   // #5b2579
+            (32, 155, 108),  // #209b6c
+            (32, 161, 157),  // #20a19d
+            (39, 132, 199),  // #2784c7
+            (29, 97, 172),   // #1d61ac
+            (49, 54, 135),   // #313687
+        ]
     }
 }
