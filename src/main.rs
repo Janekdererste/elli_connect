@@ -1,3 +1,4 @@
+mod elli;
 mod spotify;
 mod state;
 mod templates;
