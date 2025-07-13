@@ -170,6 +170,14 @@ impl ElliConnection {
             }
         })
     }
+
+    pub async fn close(mut self) -> Result<(), Box<dyn Error>> {
+        let _a = self.close_read.send(());
+        let _b = self.close_state.send(());
+        self.socket_handle.await?;
+        self.read_handle.await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -191,24 +199,12 @@ mod tests {
             .await
             .expect("Failed to create connection");
 
-        sleep(Duration::from_secs(5)).await;
+        sleep(Duration::from_secs(1)).await;
 
         connection
-            .close_state
-            .send(())
-            .expect("Failed to send close state");
-        connection
-            .close_read
-            .send(())
-            .expect("Failed to send close read");
-        connection
-            .socket_handle
+            .close()
             .await
-            .expect("Failed to wait for socket handle");
-        connection
-            .read_handle
-            .await
-            .expect("Failed to wait for read handle");
+            .expect("Failed to close connection");
     }
 
     #[tokio::test]
@@ -241,23 +237,10 @@ mod tests {
         }
 
         sleep(Duration::from_secs(2)).await;
-
         connection
-            .close_state
-            .send(())
-            .expect("Failed to send close state");
-        connection
-            .close_read
-            .send(())
-            .expect("Failed to send close read");
-        connection
-            .socket_handle
+            .close()
             .await
-            .expect("Failed to wait for socket handle");
-        connection
-            .read_handle
-            .await
-            .expect("Failed to wait for read handle");
+            .expect("Failed to close connection");
     }
 
     fn in_colors_data() -> Vec<(u8, u8, u8)> {
