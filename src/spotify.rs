@@ -7,6 +7,7 @@ use base64::Engine;
 use image::DynamicImage;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::f32::consts::E;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -239,12 +240,26 @@ pub fn scope() -> Scope {
 }
 
 #[get("/auth")]
-async fn authenticate(session: Session, app_state: web::Data<AppState>) -> impl Responder {
+async fn authenticate(
+    session: Session,
+    app_state: web::Data<AppState>,
+) -> Result<HttpResponse, actix_web::Error> {
+    // check if we have stored an elli ccc. If not redirect to index page.
+    if let None = session
+        .get::<String>("ccc")
+        .map_err(ErrorInternalServerError)?
+    {
+        let response = HttpResponse::Found()
+            .append_header(("Location", "/"))
+            .finish();
+        return Ok(response);
+    }
+
     let state = rnd_string();
     // take care of error handling later
     session
         .insert("state", &state)
-        .expect("Could not store state into session");
+        .map_err(ErrorInternalServerError)?;
 
     // we can use unwrap here, as we hardcoded this url
     let mut url = Url::parse(SPOTIFY_AUTH_URL).unwrap();
@@ -255,9 +270,10 @@ async fn authenticate(session: Session, app_state: web::Data<AppState>) -> impl 
         .append_pair("redirect_uri", REDIRECT_URI)
         .append_pair("state", &state);
 
-    HttpResponse::Found()
+    let response = HttpResponse::Found()
         .append_header(("Location", url.as_str()))
-        .finish()
+        .finish();
+    Ok(response)
 }
 
 #[get("/callback")]
@@ -283,13 +299,19 @@ async fn callback(
         .map_err(ErrorInternalServerError)?;
 
     // get the internal session id
-    let session_id = get_session_id(&session).map_err(ErrorInternalServerError)?;
-    // store the session id and the token response in the state
-    state.insert_access(&session_id, access);
-
-    Ok(HttpResponse::Found()
-        .append_header(("Location", "/"))
-        .finish())
+    match session
+        .get::<String>("ccc")
+        .map_err(ErrorInternalServerError)?
+    {
+        None => Ok(HttpResponse::BadRequest().body("No session id found")),
+        Some(ccc) => {
+            state.insert_access(&ccc, access);
+            let redirect_path = format!("/{}/connected", ccc);
+            Ok(HttpResponse::Found()
+                .append_header(("Location", redirect_path))
+                .finish())
+        }
+    }
 }
 
 fn auth_header(spotify_credentials: &SpotifyAppCredentials) -> String {

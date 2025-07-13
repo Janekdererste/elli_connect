@@ -1,10 +1,18 @@
 {% extends "base.html" %}
 
 {% block content %}
+<main class="main-grid">
+    <div class="main-container">
+        <h1>{{ error }}</h1>
+        <p>{{ description }} </p>
+    </div>
+</main>
+
+
 <div class="spotify-grid">
     <div class="login-container">
         <h1>Elli Spotify</h1>
-        <p>Connect to your Spotify account with your Elli ({{ b_code }}{{d_code}})</p>
+        <p>Connect to your Spotify account with your Elli</p>
         <a href="/spotify/auth" class="spotify-button">Connect to Spotify</a>
     </div>
 </div>

@@ -5,7 +5,10 @@ use askama::Template;
 // Template definitions
 #[derive(Template)]
 #[template(path = "connect.html")]
-pub struct ConnectTemplate {}
+pub struct ConnectTemplate {
+    pub(crate) b_code: String,
+    pub(crate) d_code: String,
+}
 
 // Template definitions
 #[derive(Template)]
@@ -19,6 +22,13 @@ pub struct IndexTemplate {
 #[template(path = "callback.html")]
 pub struct CallbackTemplate {
     pub scope: String,
+}
+
+#[derive(Template)]
+#[template(path = "error.html")]
+pub struct ErrorTemplate {
+    pub error: String,
+    pub description: String,
 }
 
 pub fn into_response<T: Template>(template: T) -> HttpResponse {

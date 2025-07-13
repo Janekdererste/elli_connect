@@ -1,3 +1,4 @@
+use crate::elli::ElliConfig;
 use crate::spotify::SpotifyAccess;
 use actix_session::Session;
 use rand::distributions::{Alphanumeric, DistString};
@@ -7,6 +8,7 @@ use std::sync::{Arc, RwLock};
 
 pub struct AppState {
     spotify_user_access: RwLock<HashMap<String, Arc<SpotifyAccess>>>,
+    elli_states: RwLock<HashMap<String, Arc<ElliState>>>,
     spotify_credentials: SpotifyAppCredentials,
 }
 
@@ -15,6 +17,7 @@ impl AppState {
     pub fn new(spotify_secret: String) -> Self {
         AppState {
             spotify_user_access: RwLock::new(HashMap::new()),
+            elli_states: RwLock::new(HashMap::new()),
             spotify_credentials: SpotifyAppCredentials::new(spotify_secret),
         }
     }
@@ -30,6 +33,25 @@ impl AppState {
         let tokens = self.spotify_user_access.read().unwrap();
         if let Some(access) = tokens.get(client_id) {
             Some(access.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn insert_elli_config(&self, config: ElliConfig) {
+        let key = format!("{}{}", config.b_code, config.d_code);
+        let state = ElliState {
+            config,
+            connected_spotify_account: None,
+        };
+        let mut elli_states = self.elli_states.write().unwrap();
+        elli_states.insert(key, Arc::new(state));
+    }
+
+    pub fn get_elli_state(&self, ccc: &str) -> Option<Arc<ElliState>> {
+        let elli_states = self.elli_states.read().unwrap();
+        if let Some(state) = elli_states.get(ccc) {
+            Some(state.clone())
         } else {
             None
         }
@@ -70,6 +92,11 @@ pub fn get_session_id(session: &Session) -> Result<String, Box<dyn Error>> {
         session.insert("session_id", &session_id)?;
         Ok(session_id)
     }
+}
+
+pub struct ElliState {
+    config: ElliConfig,
+    pub(crate) connected_spotify_account: Option<String>, // use spotify id for now.
 }
 
 pub fn rnd_string() -> String {

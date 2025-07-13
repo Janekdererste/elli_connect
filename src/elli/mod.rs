@@ -4,6 +4,7 @@ mod messages;
 use crate::elli::connection::{ElliReceiver, ElliSocket};
 use crate::elli::messages::internal::Command;
 use crate::elli::messages::websocket::PixelData;
+use actix_web::error::ContentTypeError;
 use actix_web::error::ContentTypeError::ParseError;
 use futures_util::{SinkExt, StreamExt};
 use log::info;
@@ -12,14 +13,14 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_tungstenite::connect_async;
 
-pub struct SocketConfig {
+pub struct ElliConfig {
     host: String,
     pub(crate) b_code: String,
     pub(crate) d_code: String,
     size: usize,
 }
 
-impl SocketConfig {
+impl ElliConfig {
     pub fn new(host: String, b_code: String, d_code: String, size: usize) -> Self {
         info!(
             "new socket config with:{}, {}, {}, {}",
@@ -33,14 +34,14 @@ impl SocketConfig {
         }
     }
 
-    pub fn from_ccc(ccc: &str) -> Result<Self, Box<dyn Error>> {
+    pub fn from_ccc(ccc: &str) -> Result<Self, ContentTypeError> {
         let (b_code, d_code, opt_size) = Self::parse_ccc(ccc)?;
         let host = String::from("wss://ws.elemon.de:443");
         let size = opt_size.unwrap_or(5);
         Ok(Self::new(host, b_code, d_code, size))
     }
 
-    fn parse_ccc(ccc: &str) -> Result<(String, String, Option<usize>), Box<dyn Error>> {
+    fn parse_ccc(ccc: &str) -> Result<(String, String, Option<usize>), ContentTypeError> {
         let b_code = ccc.get(0..8).ok_or(ParseError)?.to_string();
         let d_code = ccc.get(8..16).ok_or(ParseError)?.to_string();
         let size = ccc.get(16..18).and_then(|s| s.parse().ok());
@@ -66,7 +67,7 @@ pub enum ConnectionStatus {
 }
 
 impl ElliConnection {
-    pub async fn new(config: SocketConfig) -> Result<Self, Box<dyn Error>> {
+    pub async fn new(config: ElliConfig) -> Result<Self, Box<dyn Error>> {
         info!("Connecting socket to: {}", config.host);
         let (ws_stream, _res) = connect_async(&config.host).await?;
         let (write, read) = ws_stream.split();
@@ -196,7 +197,7 @@ mod tests {
             .is_test(true)
             .init();
 
-        let config = SocketConfig::from_ccc("0FBL3E2B3UPU4R9Z").expect("Failed to parse CCC");
+        let config = ElliConfig::from_ccc("0FBL3E2B3UPU4R9Z").expect("Failed to parse CCC");
         let connection = ElliConnection::new(config)
             .await
             .expect("Failed to create connection");
@@ -217,7 +218,7 @@ mod tests {
             .is_test(true)
             .init();
 
-        let config = SocketConfig::from_ccc("0FBL3E2B3UPU4R9Z").expect("Failed to parse CCC");
+        let config = ElliConfig::from_ccc("0FBL3E2B3UPU4R9Z").expect("Failed to parse CCC");
         let mut connection = ElliConnection::new(config)
             .await
             .expect("Failed to create connection");

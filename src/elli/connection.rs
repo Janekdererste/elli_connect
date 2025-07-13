@@ -3,7 +3,7 @@ use crate::elli::messages::websocket::{
     AuthMessage, AuthenticationMessage, DeviceNameMessage, PixelData, PixelMessage, RequestMessage,
     SocketMessage, WriteMessage,
 };
-use crate::elli::{ConnectionStatus, SocketConfig};
+use crate::elli::{ConnectionStatus, ElliConfig};
 use futures_util::{SinkExt, StreamExt};
 use log::info;
 use serde_json::{from_str, to_string};
@@ -129,7 +129,7 @@ pub struct ElliSocket {
     >,
     pub(crate) command_recv: tokio::sync::mpsc::Receiver<Command>,
     pub(crate) read_recv: tokio::sync::mpsc::Receiver<OnRecv>,
-    pub(crate) config: SocketConfig,
+    pub(crate) config: ElliConfig,
     pub(crate) status: ConnectionStatus,
     pub(crate) device_name: String,
 }
