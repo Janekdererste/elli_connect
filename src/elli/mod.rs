@@ -5,7 +5,7 @@ use crate::elli::connection::{ElliReceiver, ElliSocket};
 use crate::elli::messages::internal::Command;
 use crate::elli::messages::websocket::PixelData;
 use actix_web::error::ContentTypeError::ParseError;
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use log::info;
 use std::error::Error;
 use tokio::sync::oneshot;
@@ -160,6 +160,8 @@ impl ElliConnection {
                     }
                     _ = &mut shutdown => {
                         info!("ElliSocket received shutdown signal. Current state: {:?}, {:?}", state.status, state.device_name);
+                        state.write.close().await.expect("Error on closing socket.");
+                        info!("Socket closed.");
                         break;
                     }
                     else => {
