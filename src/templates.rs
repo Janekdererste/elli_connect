@@ -13,9 +13,12 @@ pub struct ConnectTemplate {
 // Template definitions
 #[derive(Template)]
 #[template(path = "index.html")]
-pub struct IndexTemplate {
-    pub(crate) player_status: PlayingModel,
-    pub color_matrix: ColorMatrixModel,
+pub struct IndexTemplate {}
+
+#[derive(Template)]
+#[template(path = "device.html")]
+pub struct ConnectedDeviceTemplate {
+    pub(crate) ccc: String,
 }
 
 #[derive(Template)]

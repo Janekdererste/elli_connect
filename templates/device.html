@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="template-container">
+    <main class="flex-column">
+        <h2>Connect your Elli to Spotify</h2>
+        <p class="flex-column">
+            Your device code is: {{ ccc }}
+        </p>
+        <a href="/spotify/auth" class="spotify-button">Connect to Spotify</a>
+    </main>
+</div>
+{% endblock %}

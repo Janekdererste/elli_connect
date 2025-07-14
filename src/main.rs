@@ -7,7 +7,8 @@ use crate::elli::ElliConfig;
 use crate::spotify::SpotifyClient;
 use crate::state::{get_session_id, AppState};
 use crate::templates::{
-    into_response, ColorMatrixModel, ErrorTemplate, IndexTemplate, PlayingModel,
+    into_response, ColorMatrixModel, ConnectedDeviceTemplate, ErrorTemplate, IndexTemplate,
+    PlayingModel,
 };
 use actix_files as fs;
 use actix_session::storage::CookieSessionStore;
@@ -24,60 +25,78 @@ use std::env;
 use templates::ConnectTemplate;
 
 #[get("/")]
-async fn index(
-    session: Session,
-    state: web::Data<AppState>,
-    spotify_client: web::Data<SpotifyClient>,
-) -> Result<HttpResponse, actix_web::Error> {
-    let session_id = get_session_id(&session).map_err(ErrorInternalServerError)?;
-
-    if let Some(_) = state.get_access(&session_id) {
-        Ok(connected_index(&session_id, state, spotify_client).await?)
-    } else {
-        Ok(into_response(ConnectTemplate {
-            b_code: String::new(),
-            d_code: String::new(),
-        }))
-    }
+async fn index() -> Result<HttpResponse, actix_web::Error> {
+    Ok(into_response(IndexTemplate {}))
 }
 
 #[get("/{ccc}")]
 async fn device(
     ccc: web::Path<String>,
     session: Session,
-    state: web::Data<AppState>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    match ElliConfig::from_ccc(&ccc) {
-        Ok(config) => {
-            // first off store the ccc parameter in the session for later
-            session
-                .insert("ccc", ccc.as_str().to_string())
-                .map_err(ErrorInternalServerError)?;
-            let b_code = config.b_code.clone();
-            let d_code = config.d_code.clone();
+    // TODO this should first check whether we can parse the device code and return the index with an error if not.
 
-            if let None = state.get_elli_state(&ccc) {
-                state.insert_elli_config(config);
-            }
-            // use unwrap here, as we have just established that the state is present.
-            let elli_state = state.get_elli_state(&ccc).unwrap();
-
-            if let Some(_) = &elli_state.connected_spotify_account {
-                let redirect_url = format!("/{}/connected", ccc.as_str());
-                let response = HttpResponse::Found()
-                    .append_header(("Location", redirect_url))
-                    .finish();
-                Ok(response)
-            } else {
-                Ok(into_response(ConnectTemplate { b_code, d_code }))
-            }
-        }
-        Err(_) => create_error_response(
-            "Invalid device Code",
-            format!("{:?} could not be parsed", ccc).as_str(),
-        ),
-    }
+    session
+        .insert("ccc", ccc.as_str().to_string())
+        .map_err(ErrorInternalServerError)?;
+    Ok(into_response(ConnectedDeviceTemplate {
+        ccc: ccc.as_str().to_string(),
+    }))
 }
+
+// async fn index(
+//     session: Session,
+//     state: web::Data<AppState>,
+//     spotify_client: web::Data<SpotifyClient>,
+// ) -> Result<HttpResponse, actix_web::Error> {
+//     let session_id = get_session_id(&session).map_err(ErrorInternalServerError)?;
+//
+//     if let Some(_) = state.get_access(&session_id) {
+//         Ok(connected_index(&session_id, state, spotify_client).await?)
+//     } else {
+//         Ok(into_response(ConnectTemplate {
+//             b_code: String::new(),
+//             d_code: String::new(),
+//         }))
+//     }
+// }
+
+// async fn device(
+//     ccc: web::Path<String>,
+//     session: Session,
+//     state: web::Data<AppState>,
+// ) -> Result<HttpResponse, actix_web::Error> {
+//     match ElliConfig::from_ccc(&ccc) {
+//         Ok(config) => {
+//             // first off store the ccc parameter in the session for later
+//             session
+//                 .insert("ccc", ccc.as_str().to_string())
+//                 .map_err(ErrorInternalServerError)?;
+//             let b_code = config.b_code.clone();
+//             let d_code = config.d_code.clone();
+//
+//             if let None = state.get_elli_state(&ccc) {
+//                 state.insert_elli_config(config);
+//             }
+//             // use unwrap here, as we have just established that the state is present.
+//             let elli_state = state.get_elli_state(&ccc).unwrap();
+//
+//             if let Some(_) = &elli_state.connected_spotify_account {
+//                 let redirect_url = format!("/{}/connected", ccc.as_str());
+//                 let response = HttpResponse::Found()
+//                     .append_header(("Location", redirect_url))
+//                     .finish();
+//                 Ok(response)
+//             } else {
+//                 Ok(into_response(ConnectTemplate { b_code, d_code }))
+//             }
+//         }
+//         Err(_) => create_error_response(
+//             "Invalid device Code",
+//             format!("{:?} could not be parsed", ccc).as_str(),
+//         ),
+//     }
+// }
 #[get("/{ccc}/connected")]
 async fn connected(
     ccc: web::Path<String>,
@@ -132,13 +151,13 @@ async fn connected_index(
         };
 
         Ok(into_response(IndexTemplate {
-            player_status: model,
-            color_matrix: matrix_model,
+            //player_status: model,
+            //color_matrix: matrix_model,
         }))
     } else {
         Ok(into_response(IndexTemplate {
-            player_status: PlayingModel::new(),
-            color_matrix: ColorMatrixModel::default(),
+            //player_status: PlayingModel::new(),
+            //color_matrix: ColorMatrixModel::default(),
         }))
     }
 }
