@@ -1,6 +1,22 @@
 {% extends "base.html" %}
 
 {% block content %}
+<div class="template-container">
+    <main class="flex-column">
+        <h2>Now Playing</h2>
+        <p class="flex-column">
+            <img src="{{ player_status.image_url }}" alt="Album cover" class="album-art">
+            <div class="flex-column">
+                <h3 class="track-name">{{ player_status.name }}</h3>
+                <span class="secondary-text"> {{ player_status.artists | join(", ") }}</span>
+            </div>
+        </p>
+        <a href="/spotify/auth" class="spotify-button">Connect to Spotify</a>
+    </main>
+</div>
+
+
+
 <div class="spotify-grid">
     <div class="now-playing-container">
         <h1>Now Playing</h1>
@@ -11,46 +27,6 @@
                 <span class="secondary-text"> {{ player_status.artists | join(", ") }}</span>
             </div>
         </div>
-
-        <!-- Downward Arrow -->
-        <div class="down-arrow">
-            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" viewBox="0 0 16 16">
-                <path fill-rule="evenodd" d="M8 12a.5.5 0 0 1-.374-.17l-4-4.5a.5.5 0 1 1 .748-.66L8 10.792l3.626-4.122a.5.5 0 1 1 .748.66l-4 4.5A.5.5 0 0 1 8 12z"/>
-            </svg>
-        </div>
-        
-        <!-- Matrix Grid -->
-        <div class="matrix-grid" style="grid-template-columns: repeat({{ color_matrix.width }}, 1fr); ">
-            {% for color in color_matrix.colors %}
-            <div class="matrix-cell" style="background-color: {{ color }};"></div>
-            {% endfor %}
-        </div>
     </div>
 </div>
-
-<style>
-    .matrix-grid {
-        display: grid;
-        margin-top: 4em;
-    }
-    .matrix-cell {
-        aspect-ratio: 1;
-        width: 100%;
-        transition: background-color 0.3s ease;
-    }
-
-    .down-arrow {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin: 2em 0 1em;
-        color: #888;
-        animation: bounce 2s infinite;
-    }
-
-    @keyframes bounce {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(6px); }
-    }
-</style>
 {% endblock %}

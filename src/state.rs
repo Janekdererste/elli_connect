@@ -22,16 +22,16 @@ impl AppState {
         }
     }
 
-    pub fn insert_access(&self, client_id: &str, access: SpotifyAccess) {
+    pub fn insert_access(&self, key: &str, access: SpotifyAccess) {
         // I think unwrap is fine here, as the insert should not panic
         let mut tokens = self.spotify_user_access.write().unwrap();
-        tokens.insert(client_id.to_string(), Arc::new(access));
+        tokens.insert(key.to_string(), Arc::new(access));
     }
 
-    pub fn get_access(&self, client_id: &str) -> Option<Arc<SpotifyAccess>> {
+    pub fn get_access(&self, key: &str) -> Option<Arc<SpotifyAccess>> {
         // I think unwrap is fine here, as the get should not panic
         let tokens = self.spotify_user_access.read().unwrap();
-        if let Some(access) = tokens.get(client_id) {
+        if let Some(access) = tokens.get(key) {
             Some(access.clone())
         } else {
             None

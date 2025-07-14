@@ -4,18 +4,29 @@
 <div class="template-container">
     <main class="flex-column">
         <h2>Connect your Elli!</h2>
-        <form method="GET" action="/" class="flex-column">
+        <form method="GET" action="/" class="flex-column" id="form">
             <p class="flex-column">
                 <label for="device_code" style="margin-bottom: 0.3rem">Enter your device code</label>
                 <input type="text" name="device_code" id="device_code" placeholder="E.g. 0FUA3E2B3UPX4R9Z">
             </p>
             <button
                     type="submit"
-                    onclick="this.form.action='/' + this.form.device_code.value"
                     class="full-width"
             >Connect
             </button>
         </form>
     </main>
 </div>
+
+<script>
+    document.getElementById('form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        const deviceCode = document.getElementById('device_code').value;
+        if (deviceCode) {
+            window.location.href = `/${deviceCode}`;
+        }
+        return false;
+    });
+
+</script>
 {% endblock %}

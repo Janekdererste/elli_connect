@@ -7,14 +7,15 @@ use crate::elli::ElliConfig;
 use crate::spotify::SpotifyClient;
 use crate::state::{get_session_id, AppState};
 use crate::templates::{
-    into_response, ColorMatrixModel, ConnectedDeviceTemplate, ErrorTemplate, IndexTemplate,
-    PlayingModel,
+    into_response, ColorMatrixModel, ConnectedDeviceTemplate, ConnectedTemplate, ErrorTemplate,
+    IndexTemplate, PlayingModel,
 };
 use actix_files as fs;
 use actix_session::storage::CookieSessionStore;
 use actix_session::{Session, SessionMiddleware};
 use actix_web::cookie::Key;
 use actix_web::error::{ContentTypeError, ErrorInternalServerError};
+use actix_web::http::StatusCode;
 use actix_web::{get, web, App, HttpResponse, HttpServer};
 use askama::Template;
 use env_logger::Env;
@@ -42,6 +43,28 @@ async fn device(
     Ok(into_response(ConnectedDeviceTemplate {
         ccc: ccc.as_str().to_string(),
     }))
+}
+
+#[get("/{ccc}/connected")]
+async fn connected(
+    ccc: web::Path<String>,
+    state: web::Data<AppState>,
+    spotify_client: web::Data<SpotifyClient>,
+) -> Result<HttpResponse, actix_web::Error> {
+    if let Some(current_track) = spotify_client
+        .get_current_track(ccc.as_str(), state)
+        .await
+        .map_err(ErrorInternalServerError)?
+    {
+        let model = PlayingModel::from(current_track);
+        Ok(into_response(ConnectedTemplate {
+            player_status: model,
+        }))
+        //let image = spotify_client.get_image(&model.image_url).await?;
+    } else {
+        Ok(HttpResponse::InternalServerError()
+            .body("Something went wrong. Please try again later."))
+    }
 }
 
 // async fn index(
@@ -97,18 +120,18 @@ async fn device(
 //         ),
 //     }
 // }
-#[get("/{ccc}/connected")]
-async fn connected(
-    ccc: web::Path<String>,
-    state: web::Data<AppState>,
-    spotify_client: web::Data<SpotifyClient>,
-) -> Result<HttpResponse, actix_web::Error> {
-    if let Some(elli_state) = state.get_elli_state(&ccc) {
-        connected_index(&ccc, state, spotify_client).await
-    } else {
-        Ok(HttpResponse::Ok().body("no elli state so far."))
-    }
-}
+// #[get("/{ccc}/connected")]
+// async fn connected(
+//     ccc: web::Path<String>,
+//     state: web::Data<AppState>,
+//     spotify_client: web::Data<SpotifyClient>,
+// ) -> Result<HttpResponse, actix_web::Error> {
+//     if let Some(elli_state) = state.get_elli_state(&ccc) {
+//         connected_index(&ccc, state, spotify_client).await
+//     } else {
+//         Ok(HttpResponse::Ok().body("no elli state so far."))
+//     }
+// }
 
 fn create_error_response(error: &str, description: &str) -> Result<HttpResponse, actix_web::Error> {
     let template = ErrorTemplate {

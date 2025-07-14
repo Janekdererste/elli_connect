@@ -22,9 +22,9 @@ pub struct ConnectedDeviceTemplate {
 }
 
 #[derive(Template)]
-#[template(path = "callback.html")]
-pub struct CallbackTemplate {
-    pub scope: String,
+#[template(path = "connected.html")]
+pub struct ConnectedTemplate {
+    pub(crate) player_status: PlayingModel,
 }
 
 #[derive(Template)]

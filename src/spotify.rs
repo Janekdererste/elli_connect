@@ -86,10 +86,10 @@ impl SpotifyClient {
 
     pub async fn get_current_track(
         &self,
-        user_id: &str,
+        ccc: &str,
         state: web::Data<AppState>,
     ) -> Result<Option<CurrentlyPlaying>, Box<dyn std::error::Error>> {
-        let access = Self::ensure_fresh_token(user_id, state).await?;
+        let access = Self::ensure_fresh_token(ccc, state).await?;
         let bearer = format!("Bearer {}", access.access_token());
 
         let response = self
@@ -119,20 +119,20 @@ impl SpotifyClient {
     }
 
     async fn ensure_fresh_token(
-        user_id: &str,
+        ccc: &str,
         state: web::Data<AppState>,
     ) -> Result<Arc<SpotifyAccess>, Box<dyn std::error::Error>> {
         let access = state
-            .get_access(user_id)
+            .get_access(ccc)
             .ok_or_else(|| "No access token found, but should be present.")?;
         if access.should_refresh() {
             let spotify_credentials = state.get_spotify_credentials();
             let new_access = SpotifyAccess::refresh(&access, spotify_credentials).await?;
-            state.insert_access(user_id, new_access);
+            state.insert_access(ccc, new_access);
         }
         // we use unwrap because we have just inserted the access_token
         let result = state
-            .get_access(user_id)
+            .get_access(ccc)
             .ok_or_else(|| "Failed to retreive freshly inserted token")?;
         Ok(result)
     }
@@ -209,6 +209,7 @@ impl SpotifyAccess {
     ) -> Result<TokenResponse, reqwest::Error> {
         let auth_header = auth_header(spotify_credentials);
 
+        // TODO replace with spotify client
         let token_response = reqwest::Client::new()
             .post(SPOTIFY_TOKEN_URL)
             .header("Authorization", auth_header)
@@ -294,6 +295,7 @@ async fn callback(
         }
     }
 
+    // switch authorization token against access token and refresh token
     let access = SpotifyAccess::authorize(&params.code, state.get_spotify_credentials())
         .await
         .map_err(ErrorInternalServerError)?;
