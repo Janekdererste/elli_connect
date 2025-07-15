@@ -10,6 +10,7 @@ pub struct AppState {
     spotify_user_access: RwLock<HashMap<String, Arc<SpotifyAccess>>>,
     elli_states: RwLock<HashMap<String, Arc<ElliState>>>,
     spotify_credentials: SpotifyAppCredentials,
+    oauth_states: RwLock<HashMap<String, String>>,
 }
 
 impl AppState {
@@ -18,6 +19,7 @@ impl AppState {
         AppState {
             spotify_user_access: RwLock::new(HashMap::new()),
             elli_states: RwLock::new(HashMap::new()),
+            oauth_states: RwLock::new(HashMap::new()),
             spotify_credentials: SpotifyAppCredentials::new(spotify_secret),
         }
     }
@@ -59,6 +61,25 @@ impl AppState {
 
     pub fn get_spotify_credentials(&self) -> &SpotifyAppCredentials {
         &self.spotify_credentials
+    }
+
+    pub fn insert_oauth_state(&self, key: &str, state: String) {
+        let mut oauth_states = self.oauth_states.write().unwrap();
+        oauth_states.insert(key.to_string(), state);
+    }
+
+    pub fn get_oauth_state(&self, key: &str) -> Option<String> {
+        let oauth_states = self.oauth_states.read().unwrap();
+        if let Some(state) = oauth_states.get(key) {
+            Some(state.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn remove_oauth_state(&self, key: &str) {
+        let mut oauth_states = self.oauth_states.write().unwrap();
+        oauth_states.remove(key);
     }
 }
 

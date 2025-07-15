@@ -13,7 +13,7 @@ use crate::templates::{
 use actix_files as fs;
 use actix_session::storage::CookieSessionStore;
 use actix_session::{Session, SessionMiddleware};
-use actix_web::cookie::Key;
+use actix_web::cookie::{Key, SameSite};
 use actix_web::error::{ContentTypeError, ErrorInternalServerError};
 use actix_web::http::StatusCode;
 use actix_web::{get, web, App, HttpResponse, HttpServer};
@@ -30,7 +30,7 @@ async fn index() -> Result<HttpResponse, actix_web::Error> {
     Ok(into_response(IndexTemplate {}))
 }
 
-#[get("/{ccc}")]
+#[get("/device/{ccc}")]
 async fn device(
     ccc: web::Path<String>,
     session: Session,
@@ -45,12 +45,13 @@ async fn device(
     }))
 }
 
-#[get("/{ccc}/connected")]
+#[get("/device/{ccc}/connected")]
 async fn connected(
     ccc: web::Path<String>,
     state: web::Data<AppState>,
     spotify_client: web::Data<SpotifyClient>,
 ) -> Result<HttpResponse, actix_web::Error> {
+    info!("Route: /device/{ccc}/connected");
     if let Some(current_track) = spotify_client
         .get_current_track(ccc.as_str(), state)
         .await
@@ -198,16 +199,23 @@ async fn main() -> std::io::Result<()> {
     let spotify_client = web::Data::new(SpotifyClient::new());
 
     HttpServer::new(move || {
+        let session =
+            SessionMiddleware::builder(CookieSessionStore::default(), session_key.clone())
+                .cookie_http_only(true) // no javascript access
+                .cookie_same_site(SameSite::Lax) // we want the cookie to be sent from oauth flows
+                .cookie_secure(true) // only https or local address
+                .cookie_name(String::from("elli-connect"))
+                .cookie_path(String::from("/"))
+                .build();
+
         App::new()
             .app_data(state.clone())
             .app_data(spotify_client.clone())
-            .wrap(SessionMiddleware::new(
-                CookieSessionStore::default(),
-                session_key.clone(),
-            ))
+            .wrap(session)
             .service(index)
             .service(spotify::scope())
             .service(device)
+            .service(connected)
             .service(fs::Files::new("/static", "./static").show_files_listing())
     })
     .bind(("127.0.0.1", 3000))?

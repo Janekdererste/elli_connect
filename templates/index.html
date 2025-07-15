@@ -23,7 +23,7 @@
         e.preventDefault();
         const deviceCode = document.getElementById('device_code').value;
         if (deviceCode) {
-            window.location.href = `/${deviceCode}`;
+            window.location.href = `/device/${deviceCode}`;
         }
         return false;
     });

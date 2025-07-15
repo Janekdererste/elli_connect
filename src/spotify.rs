@@ -5,6 +5,7 @@ use actix_web::{get, web, HttpResponse, Responder, Scope};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use image::DynamicImage;
+use log::info;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::E;
@@ -246,22 +247,22 @@ async fn authenticate(
     app_state: web::Data<AppState>,
 ) -> Result<HttpResponse, actix_web::Error> {
     // check if we have stored an elli ccc. If not redirect to index page.
-    if let None = session
+    let ccc = if let Some(ccc) = session
         .get::<String>("ccc")
         .map_err(ErrorInternalServerError)?
     {
+        ccc
+    } else {
         let response = HttpResponse::Found()
             .append_header(("Location", "/"))
             .finish();
         return Ok(response);
-    }
+    };
 
+    info!("/auth: Session entries: {:#?}", session.entries());
+
+    // random state to evaluate in the callback
     let state = rnd_string();
-    // take care of error handling later
-    session
-        .insert("state", &state)
-        .map_err(ErrorInternalServerError)?;
-
     // we can use unwrap here, as we hardcoded this url
     let mut url = Url::parse(SPOTIFY_AUTH_URL).unwrap();
     url.query_pairs_mut()
@@ -270,6 +271,9 @@ async fn authenticate(
         .append_pair("scope", SPOTIFY_SCOPE)
         .append_pair("redirect_uri", REDIRECT_URI)
         .append_pair("state", &state);
+
+    // store the state in the app_state
+    app_state.insert_oauth_state(&ccc, state);
 
     let response = HttpResponse::Found()
         .append_header(("Location", url.as_str()))
@@ -281,39 +285,45 @@ async fn authenticate(
 async fn callback(
     params: web::Query<CallbackParams>,
     session: Session,
-    state: web::Data<AppState>,
+    app_state: web::Data<AppState>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    // make sure the state matches what we have sent
-    if let Some(state) = session
-        .get::<String>("state")
-        .map_err(ErrorInternalServerError)?
-    {
-        if state != params.state {
-            return Ok(HttpResponse::BadRequest().body("State mismatch"));
-        } else {
-            session.remove("state");
-        }
-    }
+    info!("/callback: Session entries: {:#?}", session.entries());
 
-    // switch authorization token against access token and refresh token
-    let access = SpotifyAccess::authorize(&params.code, state.get_spotify_credentials())
-        .await
-        .map_err(ErrorInternalServerError)?;
-
-    // get the internal session id
-    match session
+    // get the session key
+    let ccc = if let Some(ccc) = session
         .get::<String>("ccc")
         .map_err(ErrorInternalServerError)?
     {
-        None => Ok(HttpResponse::BadRequest().body("No session id found")),
-        Some(ccc) => {
-            state.insert_access(&ccc, access);
-            let redirect_path = format!("/{}/connected", ccc);
-            Ok(HttpResponse::Found()
-                .append_header(("Location", redirect_path))
-                .finish())
+        ccc
+    } else {
+        let response = HttpResponse::BadRequest().body("No session id found");
+        return Ok(response);
+    };
+
+    // check whether the previously saved state matches the state param sent back by the auth api
+    if let Some(state) = app_state.get_oauth_state(&ccc) {
+        if state == params.state {
+            app_state.remove_oauth_state(&ccc);
+        } else {
+            let response = HttpResponse::BadRequest().body("State mismatch");
+            return Ok(response);
         }
+    } else {
+        let response = HttpResponse::BadRequest().body("No state found");
+        return Ok(response);
     }
+
+    // switch authorization token against access token and refresh token
+    let access = SpotifyAccess::authorize(&params.code, app_state.get_spotify_credentials())
+        .await
+        .map_err(ErrorInternalServerError)?;
+
+    app_state.insert_access(&ccc, access);
+    let redirect_path = format!("/device/{}/connected", ccc);
+    let response = HttpResponse::Found()
+        .append_header(("Location", redirect_path))
+        .finish();
+    Ok(response)
 }
 
 fn auth_header(spotify_credentials: &SpotifyAppCredentials) -> String {
