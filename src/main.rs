@@ -3,7 +3,8 @@ mod spotify;
 mod state;
 mod templates;
 
-use crate::elli::ElliConfig;
+use crate::elli::messages::websocket::PixelData;
+use crate::elli::{ElliConfig, ElliConnection};
 use crate::spotify::SpotifyClient;
 use crate::state::{get_session_id, AppState};
 use crate::templates::{
@@ -23,6 +24,7 @@ use image::imageops::FilterType;
 use image::{GenericImageView, Pixel};
 use log::info;
 use std::env;
+use std::sync::Arc;
 use templates::ConnectTemplate;
 
 #[get("/")]
@@ -48,24 +50,45 @@ async fn device(
 #[get("/device/{ccc}/connected")]
 async fn connected(
     ccc: web::Path<String>,
-    state: web::Data<AppState>,
+    app_state: web::Data<AppState>,
     spotify_client: web::Data<SpotifyClient>,
 ) -> Result<HttpResponse, actix_web::Error> {
     info!("Route: /device/{ccc}/connected");
-    if let Some(current_track) = spotify_client
-        .get_current_track(ccc.as_str(), state)
+
+    // establish new elli connection, or get an existing one
+    let connection = match app_state.get_elli_connection(&ccc) {
+        None => {
+            let config = ElliConfig::from_ccc(&ccc)?;
+            let new_connection = ElliConnection::new(config).await?;
+            app_state.insert_elli_connection(&ccc, new_connection);
+            // pass back reference to the connection in the app state. use unwrap, as we have just
+            // put the connection into the state.
+            app_state.get_elli_connection(&ccc).unwrap()
+        }
+        Some(connection) => connection,
+    };
+
+    // fetch currently playing status from spotify
+    let playing_model = if let Some(current_track) = spotify_client
+        .get_current_track(ccc.as_str(), app_state)
         .await
         .map_err(ErrorInternalServerError)?
     {
-        let model = PlayingModel::from(current_track);
-        Ok(into_response(ConnectedTemplate {
-            player_status: model,
-        }))
-        //let image = spotify_client.get_image(&model.image_url).await?;
+        PlayingModel::from(current_track)
     } else {
-        Ok(HttpResponse::InternalServerError()
-            .body("Something went wrong. Please try again later."))
+        return Ok(HttpResponse::Ok().body("No track playing. Pretty page is coming soon."));
+    };
+
+    // if something is playing, fetch the album art
+    let image = spotify_client.get_image(&playing_model.image_url).await?;
+    let downsized_image = image.resize(5, 5, FilterType::Nearest);
+    for (x, y, rgba) in downsized_image.pixels() {
+        let data = PixelData::from_rgb(rgba[0], rgba[1], rgba[2], y as usize, x as usize);
+        connection.send_pixel(data).await?
     }
+
+    let response = HttpResponse::Ok().body("Connected. Pretty page is coming.");
+    Ok(response)
 }
 
 // async fn index(

@@ -1,5 +1,5 @@
 mod connection;
-mod messages;
+pub mod messages;
 
 use crate::elli::connection::{ElliReceiver, ElliSocket};
 use crate::elli::messages::internal::Command;
@@ -9,7 +9,7 @@ use actix_web::error::ContentTypeError::ParseError;
 use futures_util::{SinkExt, StreamExt};
 use log::info;
 use std::error::Error;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::connect_async;
 
@@ -49,12 +49,13 @@ impl ElliConfig {
     }
 }
 
-struct ElliConnection {
-    command_tx: tokio::sync::mpsc::Sender<Command>,
+pub struct ElliConnection {
+    command_tx: Mutex<tokio::sync::mpsc::Sender<Command>>,
     close_read: oneshot::Sender<()>,
     close_state: oneshot::Sender<()>,
     socket_handle: JoinHandle<()>,
     read_handle: JoinHandle<()>,
+    size: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -82,6 +83,7 @@ impl ElliConnection {
             on_recv: on_recv_sender,
         };
         let read_handle = Self::start_socket_receive(recv, close_read_rx);
+        let size = config.size; // copy size before config is moved
 
         info!("Creating ElliSocket");
         let state = ElliSocket {
@@ -96,18 +98,19 @@ impl ElliConnection {
 
         info!("Creating ElliConnection");
         let connection = ElliConnection {
-            command_tx,
+            command_tx: Mutex::new(command_tx),
             close_read: close_read_tx,
             close_state: close_state_tx,
             socket_handle: state_handle,
             read_handle,
+            size,
         };
         Ok(connection)
     }
 
-    pub async fn send_pixel(&mut self, pixel: PixelData) -> Result<(), Box<dyn Error>> {
+    pub async fn send_pixel(&self, pixel: PixelData) -> Result<(), Box<dyn Error>> {
         let cmd = Command::WritePixel(pixel);
-        self.command_tx.send(cmd).await?;
+        self.command_tx.lock().await.send(cmd).await?;
         Ok(())
     }
 
@@ -174,12 +177,16 @@ impl ElliConnection {
         })
     }
 
-    pub async fn close(mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn close(self) -> Result<(), Box<dyn Error>> {
         let _a = self.close_read.send(());
         let _b = self.close_state.send(());
         self.socket_handle.await?;
         self.read_handle.await?;
         Ok(())
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
     }
 }
 

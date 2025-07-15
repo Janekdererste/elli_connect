@@ -1,4 +1,4 @@
-use crate::elli::ElliConfig;
+use crate::elli::{ElliConfig, ElliConnection};
 use crate::spotify::SpotifyAccess;
 use actix_session::Session;
 use rand::distributions::{Alphanumeric, DistString};
@@ -8,7 +8,7 @@ use std::sync::{Arc, RwLock};
 
 pub struct AppState {
     spotify_user_access: RwLock<HashMap<String, Arc<SpotifyAccess>>>,
-    elli_states: RwLock<HashMap<String, Arc<ElliState>>>,
+    elli_connections: RwLock<HashMap<String, Arc<ElliConnection>>>,
     spotify_credentials: SpotifyAppCredentials,
     oauth_states: RwLock<HashMap<String, String>>,
 }
@@ -18,7 +18,7 @@ impl AppState {
     pub fn new(spotify_secret: String) -> Self {
         AppState {
             spotify_user_access: RwLock::new(HashMap::new()),
-            elli_states: RwLock::new(HashMap::new()),
+            elli_connections: RwLock::new(HashMap::new()),
             oauth_states: RwLock::new(HashMap::new()),
             spotify_credentials: SpotifyAppCredentials::new(spotify_secret),
         }
@@ -40,24 +40,44 @@ impl AppState {
         }
     }
 
-    pub fn insert_elli_config(&self, config: ElliConfig) {
-        let key = format!("{}{}", config.b_code, config.d_code);
-        let state = ElliState {
-            config,
-            connected_spotify_account: None,
-        };
-        let mut elli_states = self.elli_states.write().unwrap();
-        elli_states.insert(key, Arc::new(state));
+    pub fn insert_elli_connection(&self, key: &str, connection: ElliConnection) {
+        let mut elli_connections = self.elli_connections.write().unwrap();
+        elli_connections.insert(key.to_string(), Arc::new(connection));
     }
 
-    pub fn get_elli_state(&self, ccc: &str) -> Option<Arc<ElliState>> {
-        let elli_states = self.elli_states.read().unwrap();
-        if let Some(state) = elli_states.get(ccc) {
-            Some(state.clone())
+    pub fn get_elli_connection(&self, key: &str) -> Option<Arc<ElliConnection>> {
+        let elli_connections = self.elli_connections.read().unwrap();
+        if let Some(connection) = elli_connections.get(key) {
+            Some(connection.clone())
         } else {
             None
         }
     }
+
+    pub fn remove_elli_connection(&self, key: &str) -> Option<Arc<ElliConnection>> {
+        // TODO the connection must be stopped too.
+        let mut elli_connections = self.elli_connections.write().unwrap();
+        elli_connections.remove(key)
+    }
+
+    // pub fn insert_elli_config(&self, config: ElliConfig) {
+    //     let key = format!("{}{}", config.b_code, config.d_code);
+    //     let state = ElliState {
+    //         config,
+    //         connected_spotify_account: None,
+    //     };
+    //     let mut elli_states = self.elli_states.write().unwrap();
+    //     elli_states.insert(key, Arc::new(state));
+    // }
+    //
+    // pub fn get_elli_state(&self, ccc: &str) -> Option<Arc<ElliState>> {
+    //     let elli_states = self.elli_states.read().unwrap();
+    //     if let Some(state) = elli_states.get(ccc) {
+    //         Some(state.clone())
+    //     } else {
+    //         None
+    //     }
+    // }
 
     pub fn get_spotify_credentials(&self) -> &SpotifyAppCredentials {
         &self.spotify_credentials
