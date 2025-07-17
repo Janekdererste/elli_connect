@@ -1,4 +1,5 @@
 mod connection;
+mod elli_connection;
 pub mod messages;
 
 use crate::elli::connection::{ElliReceiver, ElliSocket};

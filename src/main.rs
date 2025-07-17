@@ -167,6 +167,10 @@ async fn do_update(
         let data = PixelData::from_rgb(rgba[0], rgba[1], rgba[2], y as usize, x as usize);
         connection.send_pixel(data).await?
     }
+    // TODO the socket connection needs proper async/await with channels. But this will do for
+    // a few connections
+    let mut wait_till_sent = interval(Duration::from_millis(100));
+    wait_till_sent.tick().await;
     connection.close().await?;
 
     Ok(())
