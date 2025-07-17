@@ -1,14 +1,10 @@
-use crate::elli::{ElliConfig, ElliConnection};
 use crate::spotify::SpotifyAccess;
-use actix_session::Session;
 use rand::distributions::{Alphanumeric, DistString};
 use std::collections::HashMap;
-use std::error::Error;
 use std::sync::{Arc, RwLock};
 
 pub struct AppState {
     spotify_user_access: RwLock<HashMap<String, Arc<SpotifyAccess>>>,
-    elli_connections: RwLock<HashMap<String, Arc<ElliConnection>>>,
     spotify_credentials: SpotifyAppCredentials,
     oauth_states: RwLock<HashMap<String, String>>,
 }
@@ -18,7 +14,6 @@ impl AppState {
     pub fn new(spotify_secret: String) -> Self {
         AppState {
             spotify_user_access: RwLock::new(HashMap::new()),
-            elli_connections: RwLock::new(HashMap::new()),
             oauth_states: RwLock::new(HashMap::new()),
             spotify_credentials: SpotifyAppCredentials::new(spotify_secret),
         }
@@ -40,44 +35,14 @@ impl AppState {
         }
     }
 
-    pub fn insert_elli_connection(&self, key: &str, connection: ElliConnection) {
-        let mut elli_connections = self.elli_connections.write().unwrap();
-        elli_connections.insert(key.to_string(), Arc::new(connection));
+    pub fn get_all_devices(&self) -> Vec<String> {
+        self.spotify_user_access
+            .read()
+            .unwrap()
+            .keys()
+            .map(|ccc| ccc.clone())
+            .collect()
     }
-
-    pub fn get_elli_connection(&self, key: &str) -> Option<Arc<ElliConnection>> {
-        let elli_connections = self.elli_connections.read().unwrap();
-        if let Some(connection) = elli_connections.get(key) {
-            Some(connection.clone())
-        } else {
-            None
-        }
-    }
-
-    pub fn remove_elli_connection(&self, key: &str) -> Option<Arc<ElliConnection>> {
-        // TODO the connection must be stopped too.
-        let mut elli_connections = self.elli_connections.write().unwrap();
-        elli_connections.remove(key)
-    }
-
-    // pub fn insert_elli_config(&self, config: ElliConfig) {
-    //     let key = format!("{}{}", config.b_code, config.d_code);
-    //     let state = ElliState {
-    //         config,
-    //         connected_spotify_account: None,
-    //     };
-    //     let mut elli_states = self.elli_states.write().unwrap();
-    //     elli_states.insert(key, Arc::new(state));
-    // }
-    //
-    // pub fn get_elli_state(&self, ccc: &str) -> Option<Arc<ElliState>> {
-    //     let elli_states = self.elli_states.read().unwrap();
-    //     if let Some(state) = elli_states.get(ccc) {
-    //         Some(state.clone())
-    //     } else {
-    //         None
-    //     }
-    // }
 
     pub fn get_spotify_credentials(&self) -> &SpotifyAppCredentials {
         &self.spotify_credentials
@@ -123,21 +88,6 @@ impl SpotifyAppCredentials {
     pub fn id(&self) -> &str {
         &self.client_id
     }
-}
-
-pub fn get_session_id(session: &Session) -> Result<String, Box<dyn Error>> {
-    if let Some(session_id) = session.get::<String>("session_id")? {
-        Ok(session_id)
-    } else {
-        let session_id = rnd_string();
-        session.insert("session_id", &session_id)?;
-        Ok(session_id)
-    }
-}
-
-pub struct ElliState {
-    config: ElliConfig,
-    pub(crate) connected_spotify_account: Option<String>, // use spotify id for now.
 }
 
 pub fn rnd_string() -> String {

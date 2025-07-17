@@ -1,14 +1,13 @@
-use crate::state::{get_session_id, rnd_string, AppState, SpotifyAppCredentials};
+use crate::state::{rnd_string, AppState, SpotifyAppCredentials};
 use actix_session::Session;
 use actix_web::error::ErrorInternalServerError;
-use actix_web::{get, web, HttpResponse, Responder, Scope};
+use actix_web::{get, web, HttpResponse, Scope};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use image::DynamicImage;
 use log::info;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::f32::consts::E;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};

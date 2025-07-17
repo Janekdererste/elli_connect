@@ -6,26 +6,22 @@ mod templates;
 use crate::elli::messages::websocket::PixelData;
 use crate::elli::{ElliConfig, ElliConnection};
 use crate::spotify::SpotifyClient;
-use crate::state::{get_session_id, AppState};
-use crate::templates::{
-    into_response, ColorMatrixModel, ConnectedDeviceTemplate, ConnectedTemplate, ErrorTemplate,
-    IndexTemplate, PlayingModel,
-};
+use crate::state::AppState;
+use crate::templates::{into_response, ConnectedDeviceTemplate, IndexTemplate, PlayingModel};
 use actix_files as fs;
 use actix_session::storage::CookieSessionStore;
 use actix_session::{Session, SessionMiddleware};
 use actix_web::cookie::{Key, SameSite};
-use actix_web::error::{ContentTypeError, ErrorInternalServerError};
-use actix_web::http::StatusCode;
+use actix_web::error::ErrorInternalServerError;
 use actix_web::{get, web, App, HttpResponse, HttpServer};
-use askama::Template;
 use env_logger::Env;
 use image::imageops::FilterType;
-use image::{GenericImageView, Pixel};
-use log::info;
+use image::GenericImageView;
+use log::{info, warn};
 use std::env;
-use std::sync::Arc;
-use templates::ConnectTemplate;
+use std::error::Error;
+use std::time::Duration;
+use tokio::time::interval;
 
 #[get("/")]
 async fn index() -> Result<HttpResponse, actix_web::Error> {
@@ -55,18 +51,8 @@ async fn connected(
 ) -> Result<HttpResponse, actix_web::Error> {
     info!("Route: /device/{ccc}/connected");
 
-    // establish new elli connection, or get an existing one
-    let connection = match app_state.get_elli_connection(&ccc) {
-        None => {
-            let config = ElliConfig::from_ccc(&ccc)?;
-            let new_connection = ElliConnection::new(config).await?;
-            app_state.insert_elli_connection(&ccc, new_connection);
-            // pass back reference to the connection in the app state. use unwrap, as we have just
-            // put the connection into the state.
-            app_state.get_elli_connection(&ccc).unwrap()
-        }
-        Some(connection) => connection,
-    };
+    let config = ElliConfig::from_ccc(&ccc)?;
+    let connection = ElliConnection::new(config).await?;
 
     // fetch currently playing status from spotify
     let playing_model = if let Some(current_track) = spotify_client
@@ -86,127 +72,10 @@ async fn connected(
         let data = PixelData::from_rgb(rgba[0], rgba[1], rgba[2], y as usize, x as usize);
         connection.send_pixel(data).await?
     }
+    connection.close().await?;
 
     let response = HttpResponse::Ok().body("Connected. Pretty page is coming.");
     Ok(response)
-}
-
-// async fn index(
-//     session: Session,
-//     state: web::Data<AppState>,
-//     spotify_client: web::Data<SpotifyClient>,
-// ) -> Result<HttpResponse, actix_web::Error> {
-//     let session_id = get_session_id(&session).map_err(ErrorInternalServerError)?;
-//
-//     if let Some(_) = state.get_access(&session_id) {
-//         Ok(connected_index(&session_id, state, spotify_client).await?)
-//     } else {
-//         Ok(into_response(ConnectTemplate {
-//             b_code: String::new(),
-//             d_code: String::new(),
-//         }))
-//     }
-// }
-
-// async fn device(
-//     ccc: web::Path<String>,
-//     session: Session,
-//     state: web::Data<AppState>,
-// ) -> Result<HttpResponse, actix_web::Error> {
-//     match ElliConfig::from_ccc(&ccc) {
-//         Ok(config) => {
-//             // first off store the ccc parameter in the session for later
-//             session
-//                 .insert("ccc", ccc.as_str().to_string())
-//                 .map_err(ErrorInternalServerError)?;
-//             let b_code = config.b_code.clone();
-//             let d_code = config.d_code.clone();
-//
-//             if let None = state.get_elli_state(&ccc) {
-//                 state.insert_elli_config(config);
-//             }
-//             // use unwrap here, as we have just established that the state is present.
-//             let elli_state = state.get_elli_state(&ccc).unwrap();
-//
-//             if let Some(_) = &elli_state.connected_spotify_account {
-//                 let redirect_url = format!("/{}/connected", ccc.as_str());
-//                 let response = HttpResponse::Found()
-//                     .append_header(("Location", redirect_url))
-//                     .finish();
-//                 Ok(response)
-//             } else {
-//                 Ok(into_response(ConnectTemplate { b_code, d_code }))
-//             }
-//         }
-//         Err(_) => create_error_response(
-//             "Invalid device Code",
-//             format!("{:?} could not be parsed", ccc).as_str(),
-//         ),
-//     }
-// }
-// #[get("/{ccc}/connected")]
-// async fn connected(
-//     ccc: web::Path<String>,
-//     state: web::Data<AppState>,
-//     spotify_client: web::Data<SpotifyClient>,
-// ) -> Result<HttpResponse, actix_web::Error> {
-//     if let Some(elli_state) = state.get_elli_state(&ccc) {
-//         connected_index(&ccc, state, spotify_client).await
-//     } else {
-//         Ok(HttpResponse::Ok().body("no elli state so far."))
-//     }
-// }
-
-fn create_error_response(error: &str, description: &str) -> Result<HttpResponse, actix_web::Error> {
-    let template = ErrorTemplate {
-        error: String::from(error),
-        description: String::from(description),
-    };
-    let rendered = template.render().map_err(ErrorInternalServerError)?;
-    let response = HttpResponse::BadRequest()
-        .content_type("text/html")
-        .body(rendered);
-    Ok(response)
-}
-
-async fn connected_index(
-    user_id: &str,
-    state: web::Data<AppState>,
-    spotify_client: web::Data<SpotifyClient>,
-) -> Result<HttpResponse, actix_web::Error> {
-    if let Some(currently_playing) = spotify_client
-        .get_current_track(user_id, state)
-        .await
-        .map_err(ErrorInternalServerError)?
-    {
-        let model = PlayingModel::from(currently_playing);
-        let image = spotify_client.get_image(&model.image_url).await?;
-        // use fixed sample size for now. This should be taken from the lamp actually.
-        let downsized_image = image.resize(5, 5, FilterType::Nearest);
-        let rgb_image = downsized_image.to_rgb8();
-        let (width, height) = rgb_image.dimensions();
-
-        let colors: Vec<String> = rgb_image
-            .pixels()
-            .map(|p| format!("#{:02x}{:02x}{:02x}", p[0], p[1], p[2]))
-            .collect();
-        info!("{colors:#?}");
-        let matrix_model = ColorMatrixModel {
-            width,
-            height,
-            colors,
-        };
-
-        Ok(into_response(IndexTemplate {
-            //player_status: model,
-            //color_matrix: matrix_model,
-        }))
-    } else {
-        Ok(into_response(IndexTemplate {
-            //player_status: PlayingModel::new(),
-            //color_matrix: ColorMatrixModel::default(),
-        }))
-    }
 }
 
 #[actix_web::main]
@@ -220,6 +89,8 @@ async fn main() -> std::io::Result<()> {
     let session_key = Key::generate();
     let state = web::Data::new(AppState::new(secret));
     let spotify_client = web::Data::new(SpotifyClient::new());
+
+    start_update_loop(state.clone(), spotify_client.clone()).await;
 
     HttpServer::new(move || {
         let session =
@@ -244,4 +115,59 @@ async fn main() -> std::io::Result<()> {
     .bind(("127.0.0.1", 3000))?
     .run()
     .await
+}
+
+async fn start_update_loop(
+    app_state: web::Data<AppState>,
+    spotify_client: web::Data<SpotifyClient>,
+) {
+    tokio::spawn(async move {
+        let mut update_interval = interval(Duration::from_secs(10));
+
+        loop {
+            let connections = app_state.get_all_devices();
+            info!("Starting update for {} connections", connections.len());
+            for ccc in connections {
+                match do_update(ccc, app_state.clone(), spotify_client.clone()).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        warn!("Error updating device: {}", e);
+                    }
+                }
+            }
+            update_interval.tick().await;
+        }
+    });
+}
+
+async fn do_update(
+    ccc: String,
+    app_state: web::Data<AppState>,
+    spotify_client: web::Data<SpotifyClient>,
+) -> Result<(), Box<dyn Error>> {
+    let config = ElliConfig::from_ccc(&ccc)?;
+    let connection = ElliConnection::new(config).await?;
+
+    // fetch currently playing status from spotify
+    let playing_model = if let Some(current_track) = spotify_client
+        .get_current_track(ccc.as_str(), app_state)
+        .await
+        .map_err(ErrorInternalServerError)?
+    {
+        PlayingModel::from(current_track)
+    } else {
+        info!("No track playing for device: {}", ccc);
+        return Ok(());
+    };
+
+    // if something is playing, fetch the album art
+    let image = spotify_client.get_image(&playing_model.image_url).await?;
+    let downsized_image = image.resize(5, 5, FilterType::Nearest);
+    for (x, y, rgba) in downsized_image.pixels() {
+        let data = PixelData::from_rgb(rgba[0], rgba[1], rgba[2], y as usize, x as usize);
+        connection.send_pixel(data).await?
+    }
+    connection.close().await?;
+
+    Ok(())
 }
