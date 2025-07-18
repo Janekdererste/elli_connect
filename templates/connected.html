@@ -2,16 +2,16 @@
 
 {% block content %}
 <div class="template-container">
-    <main class="flex-column">
+    <main class="flex-column gap">
         <div class="flex-column">
             <h2>Now Playing</h2>
-            <p class="flex-column">
+            <div class="flex-column">
                 <img src="{{ player_status.image_url }}" alt="Album cover" class="album-art">
                 <div class="flex-column">
                     <h3 class="track-name">{{ player_status.name }}</h3>
                     <span class="secondary-text"> {{ player_status.artists | join(", ") }}</span>
                 </div>
-            </p>
+            </div>
         </div>
 
         <!-- Downward Arrow -->
@@ -27,6 +27,11 @@
             <div class="matrix-cell" style="background-color: {{ color }};"></div>
             {% endfor %}
         </div>
+
+        <!-- disconnect -->
+        <button class="red-btn">
+            <a href="disconnect" >Disconnect</a>
+        </button>
     </main>
 </div>
 {% endblock %}

@@ -19,7 +19,7 @@ use actix_web::cookie::{Key, SameSite};
 use actix_web::error::ErrorInternalServerError;
 use actix_web::{get, web, App, HttpResponse, HttpServer};
 use env_logger::Env;
-use image::imageops::FilterType;
+use image::imageops::{resize, FilterType};
 use image::GenericImageView;
 use log::{info, warn};
 use std::env;
@@ -54,6 +54,14 @@ async fn connected(
     spotify_client: web::Data<SpotifyClient>,
 ) -> Result<HttpResponse, actix_web::Error> {
     info!("Route: /device/{ccc}/connected");
+
+    // redirect to device page if not connected
+    if let None = app_state.get_access(ccc.as_str()) {
+        let response = HttpResponse::Found()
+            .append_header(("Location", format!("/device/{ccc}")))
+            .finish();
+        return Ok(response);
+    }
 
     let config = ElliConfig::from_ccc(&ccc)?;
     let elli_size = config.size;
@@ -97,6 +105,20 @@ async fn connected(
     Ok(into_response(template))
 }
 
+#[get("/device/{ccc}/disconnect")]
+async fn disconnect(
+    ccc: web::Path<String>,
+    app_state: web::Data<AppState>,
+) -> Result<HttpResponse, actix_web::Error> {
+    app_state.remove_access(ccc.as_str());
+
+    info!("Disconnect called for ccc: {}", ccc);
+    let response = HttpResponse::Found()
+        .append_header(("Location", format!("/device/{ccc}")))
+        .finish();
+    Ok(response)
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     println!("Server starting at http://127.0.0.1:3000");
@@ -129,6 +151,7 @@ async fn main() -> std::io::Result<()> {
             .service(spotify::scope())
             .service(device)
             .service(connected)
+            .service(disconnect)
             .service(fs::Files::new("/static", "./static").show_files_listing())
     })
     .bind(("127.0.0.1", 3000))?

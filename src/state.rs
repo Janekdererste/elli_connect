@@ -35,6 +35,11 @@ impl AppState {
         }
     }
 
+    pub fn remove_access(&self, key: &str) {
+        let mut tokens = self.spotify_user_access.write().unwrap();
+        tokens.remove(key);
+    }
+
     pub fn get_all_devices(&self) -> Vec<String> {
         self.spotify_user_access
             .read()
