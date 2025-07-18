@@ -29,6 +29,12 @@ pub struct ConnectedTemplate {
 }
 
 #[derive(Template)]
+#[template(path = "notrack.html")]
+pub struct NoTrackTemplate {
+    pub(crate) ccc: String,
+}
+
+#[derive(Template)]
 #[template(path = "error.html")]
 pub struct ErrorTemplate {
     pub error: String,

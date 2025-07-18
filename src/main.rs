@@ -10,7 +10,7 @@ use crate::spotify::SpotifyClient;
 use crate::state::AppState;
 use crate::templates::{
     into_response, ColorMatrixModel, ConnectedDeviceTemplate, ConnectedTemplate, IndexTemplate,
-    PlayingModel,
+    NoTrackTemplate, PlayingModel,
 };
 use actix_files as fs;
 use actix_session::storage::CookieSessionStore;
@@ -76,7 +76,10 @@ async fn connected(
     {
         PlayingModel::from(current_track)
     } else {
-        return Ok(HttpResponse::Ok().body("No track playing. Pretty page is coming soon."));
+        let response = into_response(NoTrackTemplate {
+            ccc: ccc.as_str().to_string(),
+        });
+        return Ok(response);
     };
 
     // if something is playing, fetch the album art
