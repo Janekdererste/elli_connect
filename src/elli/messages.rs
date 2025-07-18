@@ -50,7 +50,7 @@ pub mod websocket {
             let babs: f32 = b as f32 / 255.;
             let v = rabs.max(gabs).max(babs);
             let mut h: f32 = 0.0;
-            let mut s: f32 = 0.0;
+            let s: f32;
 
             let diff = v - rabs.min(gabs).min(babs);
             if diff == 0. {
@@ -136,34 +136,5 @@ pub mod websocket {
             val: u8,
             to: String,
         },
-    }
-}
-
-pub mod internal {
-    use crate::elli::messages::websocket::PixelData;
-    use crate::elli::ConnectionStatus;
-
-    #[derive(Debug)]
-    pub enum Command {
-        WritePixel(PixelData),
-    }
-
-    #[derive(Debug)]
-    pub enum OnRecv {
-        Authentication {
-            status: ConnectionStatus,
-        },
-        Disconnected {
-            status: ConnectionStatus,
-        },
-        DeviceName {
-            name: String,
-            status: ConnectionStatus,
-        },
-        Pixel(PixelData),
-    }
-
-    pub struct MsgReceivedPayload {
-        status: ConnectionStatus,
     }
 }

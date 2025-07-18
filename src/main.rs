@@ -3,8 +3,9 @@ mod spotify;
 mod state;
 mod templates;
 
+use crate::elli::elli_connection::ElliConnection;
 use crate::elli::messages::websocket::PixelData;
-use crate::elli::{ElliConfig, ElliConnection};
+use crate::elli::ElliConfig;
 use crate::spotify::SpotifyClient;
 use crate::state::AppState;
 use crate::templates::{into_response, ConnectedDeviceTemplate, IndexTemplate, PlayingModel};
@@ -52,7 +53,9 @@ async fn connected(
     info!("Route: /device/{ccc}/connected");
 
     let config = ElliConfig::from_ccc(&ccc)?;
-    let connection = ElliConnection::new(config).await?;
+    let elli_size = config.size;
+    let mut connection = ElliConnection::new(config).await?;
+    let auth_future = connection.authenticate();
 
     // fetch currently playing status from spotify
     let playing_model = if let Some(current_track) = spotify_client
@@ -67,10 +70,12 @@ async fn connected(
 
     // if something is playing, fetch the album art
     let image = spotify_client.get_image(&playing_model.image_url).await?;
-    let downsized_image = image.resize(5, 5, FilterType::Nearest);
+    let downsized_image = image.resize(elli_size as u32, elli_size as u32, FilterType::Nearest);
+    // await the connection authentication here, before we send the image
+    auth_future.await?;
     for (x, y, rgba) in downsized_image.pixels() {
         let data = PixelData::from_rgb(rgba[0], rgba[1], rgba[2], y as usize, x as usize);
-        connection.send_pixel(data).await?
+        connection.write_pixel(data).await?
     }
     connection.close().await?;
 
@@ -146,7 +151,9 @@ async fn do_update(
     spotify_client: web::Data<SpotifyClient>,
 ) -> Result<(), Box<dyn Error>> {
     let config = ElliConfig::from_ccc(&ccc)?;
-    let connection = ElliConnection::new(config).await?;
+    let mut connection = ElliConnection::new(config).await?;
+    // only take the future and fetch the spotify data while the socket connection is established.
+    let auth_future = connection.authenticate();
 
     // fetch currently playing status from spotify
     let playing_model = if let Some(current_track) = spotify_client
@@ -163,14 +170,13 @@ async fn do_update(
     // if something is playing, fetch the album art
     let image = spotify_client.get_image(&playing_model.image_url).await?;
     let downsized_image = image.resize(5, 5, FilterType::Nearest);
+
+    // await the authentication process of the lamp before we send pixels
+    auth_future.await?;
     for (x, y, rgba) in downsized_image.pixels() {
         let data = PixelData::from_rgb(rgba[0], rgba[1], rgba[2], y as usize, x as usize);
-        connection.send_pixel(data).await?
+        connection.write_pixel(data).await?
     }
-    // TODO the socket connection needs proper async/await with channels. But this will do for
-    // a few connections
-    let mut wait_till_sent = interval(Duration::from_millis(100));
-    wait_till_sent.tick().await;
     connection.close().await?;
 
     Ok(())

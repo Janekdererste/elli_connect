@@ -1,7 +1,7 @@
 use crate::elli::messages::websocket::{
     AuthMessage, AuthenticationMessage, PixelData, SocketMessage,
 };
-use crate::elli::ElliConfig;
+use crate::elli::{ConnectionStatus, ElliConfig};
 use futures_util::{SinkExt, StreamExt};
 use log::{info, warn};
 use serde_json::{from_str, to_string};
@@ -13,19 +13,18 @@ use tokio::task::JoinHandle;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
 
-pub struct ElliConnection2 {
+pub struct ElliConnection {
     cmd_tx: mpsc::Sender<Command>,
     close_manager_tx: oneshot::Sender<()>,
     close_receiver_tx: oneshot::Sender<()>,
-    ccc: String,
-    auth_status: String,
+    connection_status: ConnectionStatus,
     recv_join_handle: JoinHandle<()>,
     cmd_join_handle: JoinHandle<()>,
 }
 
 pub enum Command {
     Authenticate {
-        resp: oneshot::Sender<Result<String, CommandError>>,
+        resp: oneshot::Sender<Result<ConnectionStatus, CommandError>>,
     },
     WritePixel {
         data: PixelData,
@@ -46,7 +45,7 @@ impl std::fmt::Display for CommandError {
 
 impl Error for CommandError {}
 
-impl ElliConnection2 {
+impl ElliConnection {
     pub async fn new(config: ElliConfig) -> Result<Self, Box<dyn Error>> {
         info!("Connecting socket to: {}", config.host);
         let (ws_stream, _res) = connect_async(&config.host).await?;
@@ -61,12 +60,11 @@ impl ElliConnection2 {
 
         let result = Self {
             cmd_tx: tx_cmd,
-            ccc: "".to_string(),
-            auth_status: "".to_string(),
             cmd_join_handle,
             recv_join_handle,
             close_manager_tx: tx_close_manager,
             close_receiver_tx: tx_close_recv,
+            connection_status: ConnectionStatus::Connected,
         };
         Ok(result)
     }
@@ -77,7 +75,7 @@ impl ElliConnection2 {
         let cmd = Command::Authenticate { resp: res_tx };
         self.cmd_tx.send(cmd).await?;
         let result = res_rx.await??;
-        self.auth_status = result;
+        self.connection_status = result;
         Ok(())
     }
 
@@ -126,7 +124,7 @@ struct ConnectionManager {
     config: ElliConfig,
     // possibly, we need a list inside the map in case we have multiple auth requests for the
     // same device
-    pending_auth_request: Option<oneshot::Sender<Result<String, CommandError>>>,
+    pending_auth_request: Option<oneshot::Sender<Result<ConnectionStatus, CommandError>>>,
     // receiver to the socket reader
     rx_socket: mpsc::Receiver<RecvSocketMsg>,
     // receiver to receive commands from the main task
@@ -186,8 +184,14 @@ impl ConnectionManager {
         match msg {
             RecvSocketMsg::Authentication { status } => {
                 info!("Received authentication confirmation from receiver. Calling resp channel");
+                let connection_status = if status == "ok" {
+                    ConnectionStatus::Authenticated
+                } else {
+                    ConnectionStatus::Error
+                };
+
                 if let Some(tx) = self.pending_auth_request.take() {
-                    tx.send(Ok(status)).unwrap();
+                    tx.send(Ok(connection_status)).unwrap();
                 } else {
                     warn!("Received auth message from socket, but no pending async request in connection manager");
                 }
@@ -195,7 +199,10 @@ impl ConnectionManager {
         }
     }
 
-    async fn authenticate(&mut self, resp: oneshot::Sender<Result<String, CommandError>>) {
+    async fn authenticate(
+        &mut self,
+        resp: oneshot::Sender<Result<ConnectionStatus, CommandError>>,
+    ) {
         info!("Send authenticate to socket");
         let auth_msg = AuthMessage {
             request: "authenticate".to_string(),
@@ -276,7 +283,7 @@ impl ConnectionReceiver {
         if let Some(res) = self.reader.next().await {
             match res? {
                 Message::Text(text) => self.handle_text(text.to_string()).await,
-                Message::Ping(p) => {
+                Message::Ping(_) => {
                     info!("Received Ping");
                     Ok(())
                 }
@@ -331,7 +338,7 @@ mod tests {
             .init();
 
         let config = ElliConfig::from_ccc("0FBL3E2B3UPU4R9Z").expect("Failed to parse ccc");
-        let mut connection = ElliConnection2::new(config)
+        let mut connection = ElliConnection::new(config)
             .await
             .expect("Failed to create new socket connection");
 
