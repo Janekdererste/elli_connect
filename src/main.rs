@@ -8,7 +8,10 @@ use crate::elli::messages::websocket::PixelData;
 use crate::elli::ElliConfig;
 use crate::spotify::SpotifyClient;
 use crate::state::AppState;
-use crate::templates::{into_response, ConnectedDeviceTemplate, IndexTemplate, PlayingModel};
+use crate::templates::{
+    into_response, ColorMatrixModel, ConnectedDeviceTemplate, ConnectedTemplate, IndexTemplate,
+    PlayingModel,
+};
 use actix_files as fs;
 use actix_session::storage::CookieSessionStore;
 use actix_session::{Session, SessionMiddleware};
@@ -70,7 +73,7 @@ async fn connected(
 
     // if something is playing, fetch the album art
     let image = spotify_client.get_image(&playing_model.image_url).await?;
-    let downsized_image = image.resize(elli_size as u32, elli_size as u32, FilterType::Nearest);
+    let downsized_image = image.resize(elli_size, elli_size, FilterType::Nearest);
     // await the connection authentication here, before we send the image
     auth_future.await?;
     for (x, y, rgba) in downsized_image.pixels() {
@@ -79,8 +82,19 @@ async fn connected(
     }
     connection.close().await?;
 
-    let response = HttpResponse::Ok().body("Connected. Pretty page is coming.");
-    Ok(response)
+    let colors = downsized_image
+        .pixels()
+        .map(|(_, _, rgba)| format!("#{:02x}{:02x}{:02x}", rgba[0], rgba[1], rgba[2]))
+        .collect();
+
+    let template = ConnectedTemplate {
+        player_status: playing_model,
+        matrix_model: ColorMatrixModel {
+            size: elli_size,
+            colors,
+        },
+    };
+    Ok(into_response(template))
 }
 
 #[actix_web::main]
@@ -127,7 +141,7 @@ async fn start_update_loop(
     spotify_client: web::Data<SpotifyClient>,
 ) {
     tokio::spawn(async move {
-        let mut update_interval = interval(Duration::from_secs(10));
+        let mut update_interval = interval(Duration::from_secs(120));
 
         loop {
             let connections = app_state.get_all_devices();
@@ -151,6 +165,7 @@ async fn do_update(
     spotify_client: web::Data<SpotifyClient>,
 ) -> Result<(), Box<dyn Error>> {
     let config = ElliConfig::from_ccc(&ccc)?;
+    let elli_size = config.size;
     let mut connection = ElliConnection::new(config).await?;
     // only take the future and fetch the spotify data while the socket connection is established.
     let auth_future = connection.authenticate();
@@ -169,7 +184,7 @@ async fn do_update(
 
     // if something is playing, fetch the album art
     let image = spotify_client.get_image(&playing_model.image_url).await?;
-    let downsized_image = image.resize(5, 5, FilterType::Nearest);
+    let downsized_image = image.resize(elli_size, elli_size, FilterType::Nearest);
 
     // await the authentication process of the lamp before we send pixels
     auth_future.await?;

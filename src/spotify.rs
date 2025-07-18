@@ -89,6 +89,7 @@ impl SpotifyClient {
         ccc: &str,
         state: web::Data<AppState>,
     ) -> Result<Option<CurrentlyPlaying>, Box<dyn std::error::Error>> {
+        info!("Fetching current track for ccc: {}", ccc);
         let access = Self::ensure_fresh_token(ccc, state).await?;
         let bearer = format!("Bearer {}", access.access_token());
 
@@ -111,6 +112,7 @@ impl SpotifyClient {
         &self,
         image_url: &str,
     ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
+        info!("Fetching image: {}", image_url);
         let response = self.client.get(image_url).send().await?;
         let data = response.bytes().await?;
         let image = image::load_from_memory(&data)?;

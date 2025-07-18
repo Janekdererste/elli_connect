@@ -25,6 +25,7 @@ pub struct ConnectedDeviceTemplate {
 #[template(path = "connected.html")]
 pub struct ConnectedTemplate {
     pub(crate) player_status: PlayingModel,
+    pub(crate) matrix_model: ColorMatrixModel,
 }
 
 #[derive(Template)]
@@ -43,8 +44,7 @@ pub fn into_response<T: Template>(template: T) -> HttpResponse {
 }
 
 pub struct ColorMatrixModel {
-    pub width: u32,
-    pub height: u32,
+    pub size: u32,
     pub colors: Vec<String>, // Flattened row-major hex color strings
 }
 
@@ -52,11 +52,7 @@ impl ColorMatrixModel {
     pub fn default() -> Self {
         let default_color = String::from("#ff5157");
         let colors = vec![default_color.clone(); 25];
-        Self {
-            width: 5,
-            height: 5,
-            colors,
-        }
+        Self { size: 5, colors }
     }
 }
 
@@ -92,7 +88,7 @@ impl From<CurrentlyPlaying> for PlayingModel {
                 .album
                 .images
                 .into_iter()
-                .max_by(|a, b| a.width.cmp(&b.width))
+                .min_by(|a, b| a.width.cmp(&b.width))
                 .unwrap_or_default()
                 .url;
             Self {

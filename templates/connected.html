@@ -3,30 +3,30 @@
 {% block content %}
 <div class="template-container">
     <main class="flex-column">
-        <h2>Now Playing</h2>
-        <p class="flex-column">
-            <img src="{{ player_status.image_url }}" alt="Album cover" class="album-art">
-            <div class="flex-column">
-                <h3 class="track-name">{{ player_status.name }}</h3>
-                <span class="secondary-text"> {{ player_status.artists | join(", ") }}</span>
-            </div>
-        </p>
-        <a href="/spotify/auth" class="spotify-button">Connect to Spotify</a>
-    </main>
-</div>
-
-
-
-<div class="spotify-grid">
-    <div class="now-playing-container">
-        <h1>Now Playing</h1>
-        <div class="track-info-card">
-            <img src="{{ player_status.image_url }}" alt="Album cover" class="album-art">
-            <div class="track-details">
-                <h2 class="track-name">{{ player_status.name }}</h2>
-                <span class="secondary-text"> {{ player_status.artists | join(", ") }}</span>
-            </div>
+        <div class="flex-column">
+            <h2>Now Playing</h2>
+            <p class="flex-column">
+                <img src="{{ player_status.image_url }}" alt="Album cover" class="album-art">
+                <div class="flex-column">
+                    <h3 class="track-name">{{ player_status.name }}</h3>
+                    <span class="secondary-text"> {{ player_status.artists | join(", ") }}</span>
+                </div>
+            </p>
         </div>
-    </div>
+
+        <!-- Downward Arrow -->
+        <div class="down-arrow">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M8 12a.5.5 0 0 1-.374-.17l-4-4.5a.5.5 0 1 1 .748-.66L8 10.792l3.626-4.122a.5.5 0 1 1 .748.66l-4 4.5A.5.5 0 0 1 8 12z"/>
+            </svg>
+        </div>
+
+        <!-- Matrix Grid -->
+        <div class="matrix-grid" style="grid-template-columns: repeat({{ matrix_model.size }}, 1fr); ">
+            {% for color in matrix_model.colors %}
+            <div class="matrix-cell" style="background-color: {{ color }};"></div>
+            {% endfor %}
+        </div>
+    </main>
 </div>
 {% endblock %}

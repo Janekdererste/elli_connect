@@ -10,11 +10,11 @@ pub struct ElliConfig {
     host: String,
     pub(crate) b_code: String,
     pub(crate) d_code: String,
-    pub(crate) size: usize,
+    pub(crate) size: u32,
 }
 
 impl ElliConfig {
-    pub fn new(host: String, b_code: String, d_code: String, size: usize) -> Self {
+    pub fn new(host: String, b_code: String, d_code: String, size: u32) -> Self {
         info!(
             "new socket config with:{}, {}, {}, {}",
             host, b_code, d_code, size
@@ -34,7 +34,7 @@ impl ElliConfig {
         Ok(Self::new(host, b_code, d_code, size))
     }
 
-    fn parse_ccc(ccc: &str) -> Result<(String, String, Option<usize>), ContentTypeError> {
+    fn parse_ccc(ccc: &str) -> Result<(String, String, Option<u32>), ContentTypeError> {
         let b_code = ccc.get(0..8).ok_or(ParseError)?.to_string();
         let d_code = ccc.get(8..16).ok_or(ParseError)?.to_string();
         let size = ccc.get(16..18).and_then(|s| s.parse().ok());

@@ -70,17 +70,16 @@ impl ElliConnection {
     }
 
     pub async fn authenticate(&mut self) -> Result<(), Box<dyn Error>> {
-        info!("Sending authenticate cmd");
         let (res_tx, res_rx) = oneshot::channel();
         let cmd = Command::Authenticate { resp: res_tx };
         self.cmd_tx.send(cmd).await?;
         let result = res_rx.await??;
         self.connection_status = result;
+        info!("Authenticated Socket. Status: {:?}", self.connection_status);
         Ok(())
     }
 
     pub async fn write_pixel(&mut self, pixel: PixelData) -> Result<(), Box<dyn Error>> {
-        info!("Sending pixel data: {:?}", pixel);
         let (res_tx, res_rx) = oneshot::channel();
         let cmd = Command::WritePixel {
             resp: res_tx,
@@ -92,17 +91,15 @@ impl ElliConnection {
     }
 
     pub async fn close(self) -> Result<(), Box<dyn Error>> {
-        info!("Sending close cmd");
         // send close signals
         let _ = self.close_receiver_tx.send(());
         let _ = self.close_manager_tx.send(());
 
-        info!("Waiting for workers to finish");
         // wait for tasks to finish
         self.recv_join_handle.await?;
         self.cmd_join_handle.await?;
 
-        info!("Workers finished. Sockets are closed");
+        info!("Socket finished closing");
         Ok(())
     }
 }
@@ -153,15 +150,12 @@ impl ConnectionManager {
     }
     async fn start_task(mut self) -> JoinHandle<()> {
         tokio::spawn(async move {
-            info!("Spawning manager task");
             loop {
                 tokio::select! {
                     Some(cmd) = self.rx_cmd.recv() => { self.handle_recv_cmd(cmd).await }
                     Some(recv) = self.rx_socket.recv() => { self.handle_recv_socket_msg(recv).await }
                     _ = &mut self.rx_close => {
-                        info!("Connection Manager received close signal");
                         _ = self.writer.close().await; // we ignore the result and kill the task
-                        info!("Connection Manager closed socket");
                         break;
                     }
                 }
@@ -183,7 +177,6 @@ impl ConnectionManager {
     async fn handle_recv_socket_msg(&mut self, msg: RecvSocketMsg) {
         match msg {
             RecvSocketMsg::Authentication { status } => {
-                info!("Received authentication confirmation from receiver. Calling resp channel");
                 let connection_status = if status == "ok" {
                     ConnectionStatus::Authenticated
                 } else {
@@ -203,7 +196,6 @@ impl ConnectionManager {
         &mut self,
         resp: oneshot::Sender<Result<ConnectionStatus, CommandError>>,
     ) {
-        info!("Send authenticate to socket");
         let auth_msg = AuthMessage {
             request: "authenticate".to_string(),
             param: "ReqL1".to_string(),
@@ -230,7 +222,6 @@ impl ConnectionManager {
         data: PixelData,
         resp: oneshot::Sender<Result<(), CommandError>>,
     ) {
-        info!("Send write pixel to socket");
         let msg = Utf8Bytes::from(to_string(&data).expect("Writing to json should work"));
         match self.writer.send(Message::Text(msg)).await {
             Ok(_) => {
@@ -271,7 +262,6 @@ impl ConnectionReceiver {
                         }
                     }
                     _ = &mut rx_close => {
-                        info!("Connection Receiver received close signal");
                         break;
                     }
                 }
@@ -288,7 +278,7 @@ impl ConnectionReceiver {
                     Ok(())
                 }
                 Message::Close(c) => {
-                    info!("Socket closed: {:?}", c);
+                    info!("Socket closed from other side: {:?}", c);
                     Ok(())
                 }
                 _ => Ok(()),
@@ -299,12 +289,11 @@ impl ConnectionReceiver {
     }
 
     async fn handle_text(&mut self, text: String) -> Result<(), Box<dyn Error>> {
-        info!("Got text message: {}", text);
         let msg = from_str::<SocketMessage>(&text)?;
         match msg {
             SocketMessage::Authentication(a) => self.handle_authenticated(a).await?,
             SocketMessage::Write(_) => {
-                panic!("write message not yet implemented")
+                warn!("Receiving write messages from socket server not implemented. Ignoring message.")
             }
         }
         Ok(())
@@ -314,13 +303,9 @@ impl ConnectionReceiver {
         &mut self,
         msg: AuthenticationMessage,
     ) -> Result<(), SendError<RecvSocketMsg>> {
-        info!("Received authentication {}.", msg.connection);
-
         let recv_msg = RecvSocketMsg::Authentication {
             status: msg.connection,
         };
-
-        info!("Sending authentication status to manager.");
         self.tx_recv.send(recv_msg).await
     }
 }
