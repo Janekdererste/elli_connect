@@ -94,7 +94,7 @@ impl From<CurrentlyPlaying> for PlayingModel {
                 .album
                 .images
                 .into_iter()
-                .min_by(|a, b| a.width.cmp(&b.width))
+                .max_by(|a, b| a.width.cmp(&b.width))
                 .unwrap_or_default()
                 .url;
             Self {

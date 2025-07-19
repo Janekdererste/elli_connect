@@ -103,6 +103,9 @@ impl SpotifyClient {
         if response.status() == reqwest::StatusCode::NO_CONTENT {
             Ok(None)
         } else {
+            // let bla = response.text().await?;
+            // info!("get track response: {}", bla);
+            // let result = serde_json::from_str::<CurrentlyPlaying>(&bla)?;
             let result = response.json::<CurrentlyPlaying>().await?;
             Ok(Some(result))
         }

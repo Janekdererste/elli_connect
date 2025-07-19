@@ -1,5 +1,5 @@
 use crate::elli::messages::websocket::{
-    AuthMessage, AuthenticationMessage, PixelData, SocketMessage,
+    AuthMessage, AuthenticationMessage, PixelData, PixelMessage, RequestMessage, SocketMessage,
 };
 use crate::elli::{ConnectionStatus, ElliConfig};
 use futures_util::{SinkExt, StreamExt};
@@ -222,9 +222,22 @@ impl ConnectionManager {
         data: PixelData,
         resp: oneshot::Sender<Result<(), CommandError>>,
     ) {
-        let msg = Utf8Bytes::from(to_string(&data).expect("Writing to json should work"));
+        let req_msg = RequestMessage {
+            request: String::from("write"),
+            param: String::from("pixel"),
+            from: self.config.b_code.clone(),
+            to: self.config.d_code.clone(),
+        };
+        let pixel_msg = PixelMessage {
+            pixel: data,
+            request: req_msg,
+        };
+
+        let msg = Utf8Bytes::from(to_string(&pixel_msg).expect("Writing to json should work"));
+        info!("Writing pixel: {:?}", msg);
         match self.writer.send(Message::Text(msg)).await {
             Ok(_) => {
+                info!("Pixel written successfully");
                 resp.send(Ok(())).unwrap();
             }
             Err(e) => {
@@ -303,6 +316,7 @@ impl ConnectionReceiver {
         &mut self,
         msg: AuthenticationMessage,
     ) -> Result<(), SendError<RecvSocketMsg>> {
+        info!("Auth result: {:?}", msg);
         let recv_msg = RecvSocketMsg::Authentication {
             status: msg.connection,
         };
