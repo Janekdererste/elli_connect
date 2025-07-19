@@ -1,10 +1,12 @@
 use crate::spotify::SpotifyAccess;
+use crate::update::ElliUpdate;
 use rand::distributions::{Alphanumeric, DistString};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
 pub struct AppState {
     spotify_user_access: RwLock<HashMap<String, Arc<SpotifyAccess>>>,
+    elli_updates: RwLock<HashMap<String, RwLock<Option<ElliUpdate>>>>,
     spotify_credentials: SpotifyAppCredentials,
     oauth_states: RwLock<HashMap<String, String>>,
 }
@@ -14,6 +16,7 @@ impl AppState {
     pub fn new(spotify_secret: String) -> Self {
         AppState {
             spotify_user_access: RwLock::new(HashMap::new()),
+            elli_updates: RwLock::new(HashMap::new()),
             oauth_states: RwLock::new(HashMap::new()),
             spotify_credentials: SpotifyAppCredentials::new(spotify_secret),
         }
@@ -38,6 +41,25 @@ impl AppState {
     pub fn remove_access(&self, key: &str) {
         let mut tokens = self.spotify_user_access.write().unwrap();
         tokens.remove(key);
+    }
+
+    pub fn insert_elli_update(&self, key: &str, update: ElliUpdate) {
+        let mut updates = self.elli_updates.write().unwrap();
+        updates.insert(key.to_string(), RwLock::new(Some(update)));
+    }
+
+    pub fn has_update(&self, key: &str) -> bool {
+        let updates = self.elli_updates.read().unwrap();
+        updates.contains_key(key)
+    }
+
+    pub fn remove_elli_update(&self, key: &str) -> Option<ElliUpdate> {
+        let mut updates = self.elli_updates.write().unwrap();
+        if let Some(lock) = updates.remove(key) {
+            let update = lock.write().unwrap().take().unwrap();
+            return Some(update);
+        }
+        None
     }
 
     pub fn get_all_devices(&self) -> Vec<String> {

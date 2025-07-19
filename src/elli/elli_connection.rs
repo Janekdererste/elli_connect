@@ -234,10 +234,8 @@ impl ConnectionManager {
         };
 
         let msg = Utf8Bytes::from(to_string(&pixel_msg).expect("Writing to json should work"));
-        info!("Writing pixel: {:?}", msg);
         match self.writer.send(Message::Text(msg)).await {
             Ok(_) => {
-                info!("Pixel written successfully");
                 resp.send(Ok(())).unwrap();
             }
             Err(e) => {
@@ -316,7 +314,6 @@ impl ConnectionReceiver {
         &mut self,
         msg: AuthenticationMessage,
     ) -> Result<(), SendError<RecvSocketMsg>> {
-        info!("Auth result: {:?}", msg);
         let recv_msg = RecvSocketMsg::Authentication {
             status: msg.connection,
         };

@@ -2,6 +2,7 @@ mod elli;
 mod spotify;
 mod state;
 mod templates;
+mod update;
 
 use crate::elli::elli_connection::ElliConnection;
 use crate::elli::messages::websocket::PixelData;
@@ -12,6 +13,7 @@ use crate::templates::{
     into_response, ColorMatrixModel, ConnectedDeviceTemplate, ConnectedTemplate, IndexTemplate,
     NoTrackTemplate, PlayingModel,
 };
+use crate::update::ElliUpdate;
 use actix_files as fs;
 use actix_session::storage::CookieSessionStore;
 use actix_session::{Session, SessionMiddleware};
@@ -63,10 +65,13 @@ async fn connected(
         return Ok(response);
     }
 
+    let update = ElliUpdate::new(ccc.clone(), app_state.clone(), spotify_client.clone()).await?;
+    app_state.insert_elli_update(&ccc, update);
+
     let config = ElliConfig::from_ccc(&ccc)?;
     let elli_size = config.size;
-    let mut connection = ElliConnection::new(config).await?;
-    let auth_future = connection.authenticate();
+    // let mut connection = ElliConnection::new(config).await?;
+    // let auth_future = connection.authenticate();
 
     // fetch currently playing status from spotify
     let playing_model = if let Some(current_track) = spotify_client
@@ -84,14 +89,20 @@ async fn connected(
 
     // if something is playing, fetch the album art
     let image = spotify_client.get_image(&playing_model.image_url).await?;
-    let downsized_image = image.resize(elli_size, elli_size, FilterType::Nearest);
+    let filter_type = if elli_size < 10 {
+        FilterType::Nearest
+    } else {
+        FilterType::Lanczos3
+    };
+
+    let downsized_image = image.resize(elli_size, elli_size, filter_type);
     // await the connection authentication here, before we send the image
-    auth_future.await?;
-    for (x, y, rgba) in downsized_image.pixels() {
-        let data = PixelData::from_rgb(rgba[0], rgba[1], rgba[2], y as usize, x as usize);
-        connection.write_pixel(data).await?
-    }
-    connection.close().await?;
+    // auth_future.await?;
+    // for (x, y, rgba) in downsized_image.pixels() {
+    //     let data = PixelData::from_rgb(rgba[0], rgba[1], rgba[2], y as usize, x as usize);
+    //     connection.write_pixel(data).await?
+    // }
+    // connection.close().await?;
 
     let colors = downsized_image
         .pixels()
@@ -113,6 +124,12 @@ async fn disconnect(
     ccc: web::Path<String>,
     app_state: web::Data<AppState>,
 ) -> Result<HttpResponse, actix_web::Error> {
+    // remove state from the app state.
+    if app_state.has_update(&ccc) {
+        if let Some(update) = app_state.remove_elli_update(&ccc) {
+            update.close().await?;
+        }
+    }
     app_state.remove_access(ccc.as_str());
 
     info!("Disconnect called for ccc: {}", ccc);
@@ -134,7 +151,7 @@ async fn main() -> std::io::Result<()> {
     let state = web::Data::new(AppState::new(secret));
     let spotify_client = web::Data::new(SpotifyClient::new());
 
-    start_update_loop(state.clone(), spotify_client.clone()).await;
+    //start_update_loop(state.clone(), spotify_client.clone()).await;
 
     HttpServer::new(move || {
         let session =
@@ -162,63 +179,65 @@ async fn main() -> std::io::Result<()> {
     .await
 }
 
-async fn start_update_loop(
-    app_state: web::Data<AppState>,
-    spotify_client: web::Data<SpotifyClient>,
-) {
-    tokio::spawn(async move {
-        let mut update_interval = interval(Duration::from_secs(120));
-
-        loop {
-            let connections = app_state.get_all_devices();
-            info!("Starting update for {} connections", connections.len());
-            for ccc in connections {
-                match do_update(ccc, app_state.clone(), spotify_client.clone()).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        warn!("Error updating device: {}", e);
-                    }
-                }
-            }
-            update_interval.tick().await;
-        }
-    });
-}
-
-async fn do_update(
-    ccc: String,
-    app_state: web::Data<AppState>,
-    spotify_client: web::Data<SpotifyClient>,
-) -> Result<(), Box<dyn Error>> {
-    let config = ElliConfig::from_ccc(&ccc)?;
-    let elli_size = config.size;
-    let mut connection = ElliConnection::new(config).await?;
-    // only take the future and fetch the spotify data while the socket connection is established.
-    let auth_future = connection.authenticate();
-
-    // fetch currently playing status from spotify
-    let playing_model = if let Some(current_track) = spotify_client
-        .get_current_track(ccc.as_str(), app_state)
-        .await
-        .map_err(ErrorInternalServerError)?
-    {
-        PlayingModel::from(current_track)
-    } else {
-        info!("No track playing for device: {}", ccc);
-        return Ok(());
-    };
-
-    // if something is playing, fetch the album art
-    let image = spotify_client.get_image(&playing_model.image_url).await?;
-    let downsized_image = image.resize(elli_size, elli_size, FilterType::Nearest);
-
-    // await the authentication process of the lamp before we send pixels
-    auth_future.await?;
-    for (x, y, rgba) in downsized_image.pixels() {
-        let data = PixelData::from_rgb(rgba[0], rgba[1], rgba[2], y as usize, x as usize);
-        connection.write_pixel(data).await?
-    }
-    connection.close().await?;
-
-    Ok(())
-}
+// async fn start_update_loop(
+//     app_state: web::Data<AppState>,
+//     spotify_client: web::Data<SpotifyClient>,
+// ) {
+//     tokio::spawn(async move {
+//         let mut update_interval = interval(Duration::from_secs(30));
+//
+//         loop {
+//             let connections = app_state.get_all_devices();
+//             info!("Starting update for {} connections", connections.len());
+//             for ccc in connections {
+//                 match do_update(ccc, app_state.clone(), spotify_client.clone()).await {
+//                     Ok(_) => {}
+//                     Err(e) => {
+//                         warn!("Error updating device: {}", e);
+//                     }
+//                 }
+//             }
+//             update_interval.tick().await;
+//         }
+//     });
+// }
+//
+// async fn do_update(
+//     ccc: String,
+//     app_state: web::Data<AppState>,
+//     spotify_client: web::Data<SpotifyClient>,
+// ) -> Result<(), Box<dyn Error>> {
+//     let config = ElliConfig::from_ccc(&ccc)?;
+//     let elli_size = config.size;
+//     let mut connection = ElliConnection::new(config).await?;
+//     // only take the future and fetch the spotify data while the socket connection is established.
+//     let auth_future = connection.authenticate();
+//
+//     // fetch currently playing status from spotify
+//     let playing_model = if let Some(current_track) = spotify_client
+//         .get_current_track(ccc.as_str(), app_state)
+//         .await
+//         .map_err(ErrorInternalServerError)?
+//     {
+//         PlayingModel::from(current_track)
+//     } else {
+//         info!("No track playing for device: {}", ccc);
+//         return Ok(());
+//     };
+//
+//     // if something is playing, fetch the album art
+//     let image = spotify_client.get_image(&playing_model.image_url).await?;
+//     let downsized_image = image.resize(elli_size, elli_size, FilterType::Nearest);
+//
+//     // await the authentication process of the lamp before we send pixels
+//     auth_future.await?;
+//     let mut throttle = interval(Duration::from_millis(20));
+//     for (x, y, rgba) in downsized_image.pixels() {
+//         let data = PixelData::from_rgb(rgba[0], rgba[1], rgba[2], y as usize, x as usize);
+//         connection.write_pixel(data).await?;
+//         throttle.tick().await;
+//     }
+//     connection.close().await?;
+//
+//     Ok(())
+// }
