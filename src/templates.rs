@@ -54,36 +54,14 @@ pub struct ColorMatrixModel {
     pub colors: Vec<String>, // Flattened row-major hex color strings
 }
 
-impl ColorMatrixModel {
-    pub fn default() -> Self {
-        let default_color = String::from("#ff5157");
-        let colors = vec![default_color.clone(); 25];
-        Self { size: 5, colors }
-    }
-}
-
 pub struct PlayingModel {
-    is_playing: bool,
-    progress_ms: u64,
-    currently_playing_type: String,
+    // is_playing: bool,
+    // progress_ms: u64,
+    // currently_playing_type: String,
     name: String,
     artists: Vec<String>,
-    album: String,
+    // album: String,
     pub image_url: String,
-}
-
-impl PlayingModel {
-    pub fn new() -> Self {
-        Self {
-            is_playing: false,
-            progress_ms: 0,
-            currently_playing_type: String::new(),
-            name: String::new(),
-            artists: vec![],
-            album: String::new(),
-            image_url: String::new(),
-        }
-    }
 }
 
 impl From<CurrentlyPlaying> for PlayingModel {
@@ -98,22 +76,20 @@ impl From<CurrentlyPlaying> for PlayingModel {
                 .unwrap_or_default()
                 .url;
             Self {
-                is_playing: value.is_playing,
-                progress_ms: value.progress_ms,
-                currently_playing_type: value.currently_playing_type,
+                // is_playing: value.is_playing,
+                // progress_ms: value.progress_ms,
+                // currently_playing_type: value.currently_playing_type,
                 name: track.name,
                 artists,
-                album: track.album.name,
                 image_url,
             }
         } else {
             Self {
-                is_playing: value.is_playing,
-                progress_ms: value.progress_ms,
-                currently_playing_type: value.currently_playing_type.clone(),
+                // is_playing: value.is_playing,
+                // progress_ms: value.progress_ms,
+                // currently_playing_type: value.currently_playing_type.clone(),
                 name: value.currently_playing_type.to_string(),
                 artists: vec!["No data available for currently playing media".to_string()],
-                album: "".to_string(),
                 image_url: "https://elemonlabs.com/wp-content/uploads/2020/08/logo_transparent.png"
                     .to_string(),
             }

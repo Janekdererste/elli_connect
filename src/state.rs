@@ -62,15 +62,6 @@ impl AppState {
         None
     }
 
-    pub fn get_all_devices(&self) -> Vec<String> {
-        self.spotify_user_access
-            .read()
-            .unwrap()
-            .keys()
-            .map(|ccc| ccc.clone())
-            .collect()
-    }
-
     pub fn get_spotify_credentials(&self) -> &SpotifyAppCredentials {
         &self.spotify_credentials
     }

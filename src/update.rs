@@ -10,7 +10,6 @@ use image::imageops::FilterType;
 use image::GenericImageView;
 use log::info;
 use std::error::Error;
-use std::option::Option;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{oneshot, RwLock};
@@ -20,7 +19,6 @@ use tokio::time::interval;
 pub struct ElliUpdate {
     close_tx: oneshot::Sender<()>,
     task_handle: JoinHandle<()>,
-    last_image_url: Arc<RwLock<String>>,
 }
 
 impl ElliUpdate {
@@ -40,9 +38,8 @@ impl ElliUpdate {
         )
         .await?;
         let update = Self {
-            close_tx: close_tx,
+            close_tx,
             task_handle: handle,
-            last_image_url,
         };
         Ok(update)
     }
@@ -63,7 +60,7 @@ impl ElliUpdate {
     ) -> Result<JoinHandle<()>, Box<dyn Error>> {
         let config = ElliConfig::from_ccc(&ccc)?;
         let handle = tokio::spawn(async move {
-            let i = config.size * config.size / 2;
+            let i = config.size * 3;
             let mut update_interval = interval(Duration::from_secs(i as u64));
             info!("Starting update worker for {} with interval {}s", ccc, i);
             loop {
@@ -126,7 +123,7 @@ async fn do_update(
 
     // await the authentication process of the lamp before we send pixels
     auth_future.await?;
-    let mut throttle = interval(Duration::from_millis(20 * elli_size as u64));
+    let mut throttle = interval(Duration::from_millis(5 * elli_size as u64));
     for (x, y, rgba) in downsized_image.pixels() {
         let data = PixelData::from_rgb(rgba[0], rgba[1], rgba[2], y as usize, x as usize);
         connection.write_pixel(data).await?;

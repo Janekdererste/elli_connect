@@ -33,8 +33,8 @@ pub struct TokenResponse {
 
 #[derive(Deserialize, Debug)]
 pub struct CurrentlyPlaying {
-    pub progress_ms: u64,
-    pub is_playing: bool,
+    // pub progress_ms: u64,
+    // pub is_playing: bool,
     pub item: Option<Track>,
     pub currently_playing_type: String,
 }
@@ -49,7 +49,6 @@ pub struct Track {
 #[derive(Deserialize, Debug)]
 pub struct Album {
     pub images: Vec<Image>,
-    pub name: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -181,11 +180,14 @@ impl SpotifyAccess {
                 ("refresh_token", &refresh_token),
             ];
             let result = Self::token(&form_data, spotify_credentials).await?;
-            // let new_refresh_token = result
-            //     .refresh_token
-            //     .unwrap_or_else(|| refresh_token.clone());
-            let new_access =
-                SpotifyAccess::new(result.access_token, result.refresh_token, result.expires_in);
+            let new_refresh_token = result
+                .refresh_token
+                .unwrap_or_else(|| refresh_token.clone());
+            let new_access = SpotifyAccess::new(
+                result.access_token,
+                Some(new_refresh_token),
+                result.expires_in,
+            );
             Ok(new_access)
         } else {
             Err("No refresh token")?
@@ -215,7 +217,7 @@ impl SpotifyAccess {
         let auth_header = auth_header(spotify_credentials);
 
         // TODO replace with spotify client
-        let token_response = reqwest::Client::new()
+        let token_response = Client::new()
             .post(SPOTIFY_TOKEN_URL)
             .header("Authorization", auth_header)
             .form(form_data)
